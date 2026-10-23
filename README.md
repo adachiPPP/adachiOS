@@ -1,2 +1,2 @@
 # adachiOS
-a basic tiny operating system completely written in assembly
+a basic tiny UEFI operating system completely written in assembly
