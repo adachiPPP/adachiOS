@@ -65,9 +65,19 @@ cmd_fetch:
     jae .summed
     mov rax, [r8 + 24]
     shl rax, 12
+    mov r11d, [r8]
+    test r11d, r11d
+    jz .nxt
+    cmp r11d, EFI_CONV_MEMORY
+    je .free
+    cmp r11d, 8
+    je .nxt
+    cmp r11d, 11
+    jae .nxt
     add r9, rax
-    cmp dword [r8], EFI_CONV_MEMORY
-    jne .nxt
+    jmp .nxt
+.free:
+    add r9, rax
     add r10, rax
 .nxt:
     add r8, rdx

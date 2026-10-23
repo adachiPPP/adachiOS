@@ -65,17 +65,17 @@ vi_size:
     mov rax, [conout]
     mov rax, [rax + 72]
     mov eax, [rax + 4]
-    mov [vcurmode], rax
+    mov [vmode_holder], rax
     mov rax, [conout]
     mov rcx, rax
-    mov rdx, [vcurmode]
+    mov rdx, [vmode_holder]
     lea r8, [vcols]
-    lea r9, [vrows]
+    lea r9, [vrow2s]
     call [rax + TXT_QUERYMODE]
     test rax, rax
     jz .ok
     mov qword [vcols], 80
-    mov qword [vrows], 25
+    mov qword [vrow2s], 25
 .ok:
     cmp qword [vcols], 256
     jbe .done
@@ -163,24 +163,24 @@ vi_getkey:
 .w:
     mov rax, [conin]
     mov rcx, [rax + IN_WAITFORKEY]
-    mov [vevt], rcx
+    mov [vevt2], rcx
     mov rax, [bs]
     mov ecx, 1
-    lea rdx, [vevt]
-    lea r8, [vevidx]
+    lea rdx, [vevt2]
+    lea r8, [vevidx2]
     call [rax + BS_WAITFOREVENT]
 
     mov rax, [conin]
     mov rcx, rax
-    lea rdx, [vkey]
+    lea rdx, [vkey2]
     call [rax + IN_READKEYSTROKE]
     test rax, rax
     jnz .w
 
-    movzx eax, word [vkey]
-    mov [vsc], rax
-    movzx eax, word [vkey + 2]
-    mov [vch], rax
+    movzx eax, word [vkey2]
+    mov [vsc2], rax
+    movzx eax, word [vkey2 + 2]
+    mov [vch2], rax
     add rsp, 40
     ret
 
@@ -190,7 +190,7 @@ vi_loop:
     call vi_draw
     call vi_getkey
     mov qword [vmsgp], 0
-    cmp qword [vsc], 0
+    cmp qword [vsc2], 0
     jne .special
     mov rax, [vmode]
     cmp rax, 1
@@ -200,7 +200,7 @@ vi_loop:
     jmp .normk
 
 .special:
-    mov rax, [vsc]
+    mov rax, [vsc2]
     cmp rax, 23
     je .esc
     cmp rax, 1
@@ -230,7 +230,7 @@ vi_loop:
     jmp .next
 
 .insk:
-    mov rax, [vch]
+    mov rax, [vch2]
     cmp rax, 13
     je .ins_nl
     cmp rax, 8
@@ -242,7 +242,7 @@ vi_loop:
     call vi_insert_char
     jmp .next
 .ins_nl:
-    mov qword [vch], 10
+    mov qword [vch2], 10
     call vi_insert_char
     jmp .next
 .ins_bs:
@@ -250,7 +250,7 @@ vi_loop:
     jmp .next
 
 .cmdk:
-    mov rax, [vch]
+    mov rax, [vch2]
     cmp rax, 13
     je .cmd_enter
     cmp rax, 8
@@ -284,7 +284,7 @@ vi_loop:
     jmp .next
 
 .normk:
-    mov rax, [vch]
+    mov rax, [vch2]
     cmp rax, 'h'
     je .left
     cmp rax, 'l'
@@ -329,7 +329,7 @@ vi_loop:
     mov rax, [vpos]
     call vi_lineend
     mov [vpos], rax
-    mov qword [vch], 10
+    mov qword [vch2], 10
     call vi_insert_char
     mov qword [vmode], 1
     jmp .next
@@ -528,7 +528,7 @@ vi_insert_char:
 .place:
     lea rdx, [vbuf]
     mov rax, [vpos]
-    mov r8, [vch]
+    mov r8, [vch2]
     mov [rdx + rax], r8b
     inc qword [vlen]
     inc qword [vpos]
@@ -576,12 +576,12 @@ vi_cursor_line:
     inc rdx
     jmp .l
 .d:
-    mov [vcurline], rcx
+    mov [vcurline2], rcx
     mov rax, [vpos]
     call vi_linestart
     mov rcx, [vpos]
     sub rcx, rax
-    mov [vcurcol], rcx
+    mov [vcurcol2], rcx
     add rsp, 40
     ret
 
@@ -602,12 +602,12 @@ vi_cpz:
 
 vi_draw:
     sub rsp, 40
-    mov rax, [vrows]
+    mov rax, [vrow2s]
     dec rax
     mov [vtrows], rax
     call vi_cursor_line
 
-    mov rax, [vcurline]
+    mov rax, [vcurline2]
     cmp rax, [vtop]
     jae .below
     mov [vtop], rax
@@ -648,7 +648,7 @@ vi_draw:
     cmp rax, [vtrows]
     jae .status
     mov rsi, [vidx]
-    lea r9, [vrow]
+    lea r9, [vrow2]
     xor r10d, r10d
     mov r11, [vcols]
     dec r11
@@ -696,13 +696,13 @@ vi_draw:
     call [rax + TXT_SETCURSOR]
     mov rax, [conout]
     mov rcx, rax
-    lea rdx, [vrow]
+    lea rdx, [vrow2]
     call [rax + TXT_OUTPUTSTRING]
     inc qword [vr]
     jmp .rl
 
 .status:
-    lea r9, [vrow]
+    lea r9, [vrow2]
     xor r10d, r10d
     mov r11, [vcols]
     dec r11
@@ -736,12 +736,12 @@ vi_draw:
     mov rax, [conout]
     mov rcx, rax
     xor edx, edx
-    mov r8, [vrows]
+    mov r8, [vrow2s]
     dec r8
     call [rax + TXT_SETCURSOR]
     mov rax, [conout]
     mov rcx, rax
-    lea rdx, [vrow]
+    lea rdx, [vrow2]
     call [rax + TXT_OUTPUTSTRING]
 
     mov rax, [vmode]
@@ -749,17 +749,17 @@ vi_draw:
     jne .cur_text
     mov rdx, [vcmdlen]
     inc rdx
-    mov r8, [vrows]
+    mov r8, [vrow2s]
     dec r8
     jmp .cur_set
 .cur_text:
-    mov rdx, [vcurcol]
+    mov rdx, [vcurcol2]
     cmp rdx, [vcols]
     jb .cur_c
     mov rdx, [vcols]
     dec rdx
 .cur_c:
-    mov r8, [vcurline]
+    mov r8, [vcurline2]
     sub r8, [vtop]
 .cur_set:
     mov rax, [conout]
@@ -798,20 +798,20 @@ vname     resw 256
 vh        resq 1
 vsz       resq 1
 vst       resq 1
-vsc       resq 1
-vch       resq 1
-vkey      resd 1
-vevt      resq 1
-vevidx    resq 1
-vcurline  resq 1
-vcurcol   resq 1
+vsc2       resq 1
+vch2       resq 1
+vkey2      resd 1
+vevt2      resq 1
+vevidx2    resq 1
+vcurline2  resq 1
+vcurcol2   resq 1
 vtrows    resq 1
 vcols     resq 1
-vrows     resq 1
-vcurmode  resq 1
+vrow2s     resq 1
+vmode_holder  resq 1
 vr        resq 1
 vidx      resq 1
 vdone     resq 1
 vcol      resq 1
 vnext     resq 1
-vrow      resw 300
+vrow2      resw 300
