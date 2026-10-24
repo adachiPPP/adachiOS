@@ -3,22 +3,18 @@ VBUF    equ 0xE000
 
 cmd_vi:
     mov si, [argp]
+    test si, si
+    jz .usage
     cmp byte [si], 0
     je .usage
-    mov di, vname
-    mov cx, 15
-.cpname:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
+    call resolve
+    cmp byte [res_err], 0
+    jne .nodir
+    call need_write
     test al, al
-    jz .named
-    dec cx
-    jnz .cpname
-    mov byte [di], 0
-.named:
-    mov word [argp], vname
+    jz .out
+    mov ax, [res_dir]
+    call dir_load
     mov byte [vmode], 0
     mov byte [vmod], 0
     mov byte [vquit], 0
@@ -189,6 +185,11 @@ cmd_vi:
 .exit:
     mov ax, 0x0003
     int 0x10
+.out:
+    ret
+.nodir:
+    mov si, s_no_dir
+    call puts
     ret
 .usage:
     mov si, s_vi_usage
@@ -753,38 +754,19 @@ vi_free_chain:
 
 vi_find:
     mov byte [vi_found], 0
-    call build_name
-    call load_root
-    mov si, SCR_OFF
-    mov cx, ROOT_ENT
-.scan:
-    mov al, [si]
+    call dir_find
     test al, al
     jz .nf
-    xor bx, bx
-.cmp:
-    mov al, [si + bx]
-    cmp al, [name83 + bx]
-    jne .next
-    inc bx
-    cmp bx, 11
-    jne .cmp
-    jmp .found
-.next:
-    add si, 32
-    dec cx
-    jnz .scan
-.nf:
-    ret
-.found:
-    mov ax, si
-    sub ax, SCR_OFF
+    mov ax, [res_off]
     mov [vi_entry_off], ax
-    mov ax, [si + 26]
+    mov ax, [res_first]
     mov [vi_first], ax
-    mov ax, [si + 28]
+    mov ax, [res_size]
     mov [vi_size], ax
+    mov si, dirbuf
+    add si, [res_off]
     mov di, ventry
+    call set_es_k
     mov cx, 32
 .cp:
     mov al, [si]
@@ -794,72 +776,26 @@ vi_find:
     dec cx
     jnz .cp
     mov byte [vi_found], 1
+.nf:
     ret
 
 vi_find_free:
-    call load_root
-    mov si, SCR_OFF
-    mov cx, ROOT_ENT
-.scan:
-    mov al, [si]
+    call dir_find_free
     test al, al
-    jz .found
-    cmp al, 0xE5
-    je .found
-    add si, 32
-    dec cx
-    jnz .scan
-    xor ax, ax
-    ret
-.found:
-    mov ax, si
-    sub ax, SCR_OFF
+    jz .fail
+    mov ax, [res_off]
     mov [vi_entry_off], ax
-    mov di, ventry
-    mov cx, 32
-    xor al, al
-.fill:
-    mov [di], al
-    inc di
-    dec cx
-    jnz .fill
-    mov si, name83
-    mov di, ventry
-    mov cx, 11
-.cp:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
-    dec cx
-    jnz .cp
-    mov byte [ventry + 11], 0x20
+    call entry_init
     mov ax, 1
+    ret
+.fail:
+    xor ax, ax
     ret
 
 vi_write_entry:
     mov ax, [vi_entry_off]
-    xor dx, dx
-    mov cx, 512
-    div cx
-    mov [vi_within], dx
-    add ax, ROOT_LBA
-    mov [vi_lba], ax
-    mov bx, SCR_OFF
-    mov dx, KSEG
-    mov es, dx
-    call read_sector
-    mov si, ventry
-    mov di, SCR_OFF
-    add di, [vi_within]
-    mov cx, 16
-    cld
-    rep movsw
-    mov ax, [vi_lba]
-    mov bx, SCR_OFF
-    mov dx, KSEG
-    mov es, dx
-    call write_sector
+    mov [res_off], ax
+    call dir_write_entry
     ret
 
 vi_load:

@@ -11,6 +11,9 @@ extern bs
 extern argp
 extern puts
 extern fs_open
+extern resolve_path
+extern pathbuf
+extern need_write
 
 VBUFMAX equ 16384
 
@@ -23,6 +26,13 @@ cmd_vi:
     je .usage
 
     mov rsi, [argp]
+    call resolve_path
+    lea rsi, [pathbuf]
+    call need_write
+    test eax, eax
+    jz .denied
+
+    lea rsi, [pathbuf]
     lea rdi, [vname]
 .cp:
     mov ax, [rsi]
@@ -52,6 +62,9 @@ cmd_vi:
     mov rax, [conout]
     mov rcx, rax
     call [rax + TXT_CLEARSCREEN]
+    add rsp, 40
+    ret
+.denied:
     add rsp, 40
     ret
 .usage:

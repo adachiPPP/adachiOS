@@ -15,9 +15,14 @@ BIOS image also uses `dd` because of obvious reasons.
 
 ## uefi
 
-- 16 MB FAT image with `EFI/BOOT/BOOTX64.EFI` and `HELLO.TXT`
-- shell: `help`, `echo`, `clear`, `fetch`, `ls`, `cat`, `vi`, `uname`, `meow`,
-  `sudo`, `flappy`, `reboot`, `poweroff`, plus command history
+- 16 MB FAT image with `EFI/BOOT/BOOTX64.EFI`, `HELLO.TXT` and `home/`
+- shell: `help`, `echo`, `clear`, `fetch`, `pwd`, `cd`, `ls`, `cat`, `touch`,
+  `mkdir`, `rm`, `cp`, `mv`, `vi`, `uname`, `meow`, `sudo`, `flappy`,
+  `reboot`, `poweroff`, plus command history
+- the shell starts in `/home` and paths work (`cd ..`, `ls /`, `cp /HELLO.TXT x`)
+- reading is allowed anywhere; anything that writes outside `/home` needs `sudo`
+  for that one command (`sudo rm /HELLO.TXT`)
+- `fetch` reports firmware, CPU model, core/thread counts and RAM
 - `vi` keeps up to 16 KiB in memory
 
 boot it with OVMF, for example:
@@ -31,15 +36,22 @@ qemu-system-x86_64 -machine q35 -m 512 \
 
 ## bios
 
-- 1.44 MB FAT12 floppy with a 16-bit real-mode boot sector and `KERNEL.BIN`
-- shell: `help`, `echo`, `clear`, `fetch`, `ls`, `cat`, `vi`, `flappy`,
-  `uname`, `meow`, `sudo`, `reboot`, `poweroff`
+- 1.44 MB FAT12 floppy with a 16-bit real-mode boot sector, `KERNEL.BIN` and
+  a `home/` directory
+- shell: `help`, `echo`, `clear`, `fetch`, `pwd`, `cd`, `ls`, `cat`, `touch`,
+  `mkdir`, `rm`, `cp`, `mv`, `vi`, `flappy`, `uname`, `meow`, `sudo`,
+  `reboot`, `poweroff`
+- the shell starts in `/home`, with real subdirectories and path support; the
+  same `/home` rule applies, so writing elsewhere needs `sudo CMD`
 - `vi` keeps up to 4 KiB in memory
-- `fetch` reports total RAM from the BIOS memory probes
-- `ls` and `cat` read the real FAT12 floppy; `vi` writes back to it
+- `fetch` reports the CPU vendor/model, core counts and total RAM from the
+  BIOS memory probes
+- `ls`, `cat`, `touch`, `mkdir`, `rm`, `cp`, `mv` and `vi` all operate on the
+  real FAT12 floppy, creating and deleting directory entries and clusters
 
 ```
 qemu-system-x86_64 -fda adachiOS_bios.img
 ```
 
-`HELLO.TXT` is copied into both images because... i felt like it
+`HELLO.TXT` is copied into both images because... i felt like it, and `/home`
+is there so the shell has somewhere it is allowed to write

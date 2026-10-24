@@ -45,7 +45,7 @@ uefi_build() {
 
     rm -f adachiOS.img
     mkfs.fat -C adachiOS.img 16384
-    mmd -i adachiOS.img ::/EFI ::/EFI/BOOT
+    mmd -i adachiOS.img ::/EFI ::/EFI/BOOT ::/home
     mcopy -i adachiOS.img BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
     mcopy -i adachiOS.img HELLO.TXT ::/
 
@@ -81,6 +81,7 @@ bios_build() {
     mkfs.fat -C -F 12 -f 2 -s 1 -r 224 -S 512 adachiOS_bios.img 1440
     mcopy -i adachiOS_bios.img build/KERNEL.BIN ::/KERNEL.BIN
     mcopy -i adachiOS_bios.img HELLO.TXT ::/HELLO.TXT
+    mmd -i adachiOS_bios.img ::/home
     dd if=build/boot.bin of=adachiOS_bios.img bs=1 seek=62 conv=notrunc status=none
 
     printf 'built adachiOS_bios.img (bios)\n'

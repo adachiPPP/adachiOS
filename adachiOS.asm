@@ -11,15 +11,25 @@ global rt
 global sys_table
 global image_handle
 global puts
+global puts_w
 global print_dec
 global s_nl
 global argp
+global cwd_w
+global root_mode
 
 extern cmd_fetch
 extern cmd_ls
 extern cmd_flappy
 extern cmd_cat
 extern cmd_vi
+extern cmd_rm
+extern cmd_mkdir
+extern cmd_touch
+extern cmd_cp
+extern cmd_mv
+extern cmd_cd
+extern cmd_pwd
 
 section .text
 
@@ -52,6 +62,10 @@ efi_main:
 
 .prompt_loop:
     lea rsi, [s_prompt]
+    call puts
+    lea rsi, [cwd_w]
+    call puts_w
+    lea rsi, [s_prompt2]
     call puts
     call readline
     call dispatch
@@ -93,6 +107,15 @@ setbigmode:
     mov rdx, [bestmode]
     mov rax, [conout]
     call [rax + TXT_SETMODE]
+    add rsp, 40
+    ret
+
+puts_w:
+    sub rsp, 40
+    mov rcx, [conout]
+    mov rdx, rsi
+    mov rax, [conout]
+    call [rax + TXT_OUTPUTSTRING]
     add rsp, 40
     ret
 
@@ -343,6 +366,7 @@ restore_live:
 
 dispatch:
     sub rsp, 40
+.restart:
     cmp word [linebuf], 0
     je .out
 
@@ -359,6 +383,37 @@ dispatch:
     add rdi, 2
 .setargs:
     mov [argp], rdi
+
+    lea rsi, [n_sudo]
+    call cmd_is
+    test eax, eax
+    jz .dispatch
+
+    cmp byte [root_mode], 0
+    jne .sudo_root
+    mov rsi, [argp]
+    cmp word [rsi], 0
+    je .sudo_use
+    lea rdi, [linebuf]
+.mvarg:
+    mov ax, [rsi]
+    mov [rdi], ax
+    add rsi, 2
+    add rdi, 2
+    test ax, ax
+    jnz .mvarg
+    mov byte [root_mode], 1
+    jmp .restart
+.sudo_root:
+    lea rsi, [s_sudo_root]
+    call puts
+    jmp .out
+.sudo_use:
+    lea rsi, [s_sudo_use]
+    call puts
+    jmp .out
+
+.dispatch:
     mov qword [tabidx], 0
 
 .try:
@@ -379,6 +434,7 @@ dispatch:
     shl rax, 4
     lea rcx, [cmdtab]
     call [rcx + rax + 8]
+    mov byte [root_mode], 0
     jmp .out
 
 .unknown:
@@ -453,13 +509,6 @@ cmd_meow:
     add rsp, 40
     ret
 
-cmd_sudo:
-    sub rsp, 40
-    lea rsi, [s_sudo]
-    call puts
-    add rsp, 40
-    ret
-
 cmd_reboot:
     sub rsp, 40
     mov rax, [rt]
@@ -484,23 +533,32 @@ cmd_poweroff:
 
 section .data
 
-s_banner  db `\r\n  adachiOS 0.1 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
-s_prompt  db `:3 adachiOS> `,0
-s_help    db `commands:\r\n  help      show this list\r\n  echo      echo your words back\r\n  clear     clear the screen\r\n  fetch     system and memory info\r\n  ls        list the boot partition\r\n  cat       print a file (cat FILE)\r\n  vi        edit a file (vi FILE)\r\n  uname     kernel info\r\n  meow      :3\r\n  sudo      do not\r\n  flappy    play flappy bird (space/w flap, q quit)\r\n  reboot    cold reboot\r\n  poweroff  power off\r\n  up/down   recall previous commands\r\n`,0
+s_banner  db `\r\n  adachiOS 0.2 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
+s_prompt  db `:3 adachiOS:`,0
+s_prompt2 db `> `,0
+s_help    db `commands:\r\n  help      show this list\r\n  echo      echo your words back\r\n  clear     clear the screen\r\n  fetch     system, cpu and memory info\r\n  pwd       print the current directory\r\n  cd        change directory (cd DIR, cd to go home)\r\n  ls        list a directory (ls [DIR])\r\n  cat       print a file (cat FILE)\r\n  vi        edit a file (vi FILE, needs sudo outside /home)\r\n  touch     create an empty file (touch FILE)\r\n  mkdir     create a directory (mkdir DIR)\r\n  rm        delete a file (rm FILE)\r\n  cp        copy a file (cp SRC DST)\r\n  mv        move a file (mv SRC DST)\r\n  uname     kernel info\r\n  meow      :3\r\n  sudo      run one command as root (sudo CMD)\r\n  flappy    play flappy bird (space/w flap, q quit)\r\n  reboot    cold reboot\r\n  poweroff  power off\r\n  up/down   recall previous commands\r\n`,0
 s_unknown db `adachiOS: command not found (rude)\r\n`,0
-s_uname   db `adachiOS 0.1 x86_64 UEFI\r\n`,0
+s_sudo_use  db `usage: sudo CMD   (you start with only /home, sudo is root)\r\n`,0
+s_sudo_root db `sudo: you are already root for this command\r\n`,0
+s_uname   db `adachiOS 0.2 x86_64 UEFI\r\n`,0
 s_meow    db `meow :3\r\n`,0
-s_sudo    db `nice try. this incident will be reported.\r\n`,0
 s_nl      db `\r\n`,0
 s_bs      db 8,' ',8,0
 
 n_help     db `help`,0
+n_cd       db `cd`,0
+n_pwd      db `pwd`,0
 n_echo     db `echo`,0
 n_clear    db `clear`,0
 n_fetch    db `fetch`,0
 n_ls       db `ls`,0
 n_cat      db `cat`,0
 n_vi       db `vi`,0
+n_touch    db `touch`,0
+n_mkdir    db `mkdir`,0
+n_rm       db `rm`,0
+n_cp       db `cp`,0
+n_mv       db `mv`,0
 n_uname    db `uname`,0
 n_meow     db `meow`,0
 n_sudo     db `sudo`,0
@@ -510,19 +568,29 @@ n_flappy   db `flappy`,0
 
 cmdtab:
     dq n_help,     cmd_help
+    dq n_cd,       cmd_cd
+    dq n_pwd,      cmd_pwd
     dq n_echo,     cmd_echo
     dq n_clear,    cmd_clear
     dq n_fetch,    cmd_fetch
     dq n_ls,       cmd_ls
     dq n_cat,      cmd_cat
     dq n_vi,       cmd_vi
+    dq n_touch,    cmd_touch
+    dq n_mkdir,    cmd_mkdir
+    dq n_rm,       cmd_rm
+    dq n_cp,       cmd_cp
+    dq n_mv,       cmd_mv
     dq n_uname,    cmd_uname
     dq n_meow,     cmd_meow
-    dq n_sudo,     cmd_sudo
     dq n_flappy,   cmd_flappy
     dq n_reboot,   cmd_reboot
     dq n_poweroff, cmd_poweroff
     dq 0, 0
+
+section .data
+cwd_w    dw 0x5C, 'h', 'o', 'm', 'e', 0
+times 254 dw 0
 
 section .bss
 
@@ -532,6 +600,7 @@ conout       resq 1
 conin        resq 1
 rt           resq 1
 bs           resq 1
+root_mode    resb 1
 
 linelen      resq 1
 evt          resq 1

@@ -15,6 +15,7 @@ IN_WAITFORKEY     equ 16
 
 BS_GETMEMORYMAP   equ 56
 BS_ALLOCATEPOOL   equ 64
+BS_FREEPOOL       equ 72
 BS_WAITFOREVENT   equ 96
 BS_HANDLEPROTOCOL equ 152
 BS_STALL          equ 248
@@ -29,5 +30,6 @@ FILE_CLOSE        equ 16
 FILE_DELETE       equ 24
 FILE_READ         equ 32
 FILE_WRITE        equ 40
+FILE_GETINFO      equ 64
 
 EFI_CONV_MEMORY   equ 7
