@@ -4,7 +4,7 @@ set -eu
 cd "$(dirname "$0")"
 
 usage() {
-    printf 'usage: %s [uefi|bios]\n' "$0" >&2
+    printf 'usage: %s [uefi|bios|both]\n' "$0" >&2
     exit 1
 }
 
@@ -90,7 +90,7 @@ bios_build() {
 
 target="${1:-}"
 if [ -z "$target" ]; then
-    printf 'build for [uefi/bios] (uefi): '
+    printf 'build for [uefi/bios/both] (uefi): '
     read -r target || true
     [ -n "$target" ] || target=uefi
 fi
@@ -98,6 +98,7 @@ fi
 case "$target" in
     u|uefi) uefi_build ;;
     b|bios) bios_build ;;
+    both) uefi_build; bios_build ;;
     *) usage ;;
 esac
 
