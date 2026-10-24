@@ -537,6 +537,12 @@ cmd_yes:
     movzx eax, word [numbuf + 2]
     cmp ax, 3
     je .L_yes_done
+    cmp ax, 0x001B
+    je .L_yes_done
+    cmp ax, 'q'
+    je .L_yes_done
+    cmp ax, 'Q'
+    je .L_yes_done
 .L_yes_print:
     lea rsi, [s_yes_word]
     call puts
@@ -578,6 +584,12 @@ cmd_seq:
     jnz .L_seq_go
     movzx eax, word [numbuf + 2]
     cmp ax, 3
+    je .L_seq_out
+    cmp ax, 0x001B
+    je .L_seq_out
+    cmp ax, 'q'
+    je .L_seq_out
+    cmp ax, 'Q'
     je .L_seq_out
 .L_seq_go:
     cmp r12, rcx
@@ -623,6 +635,12 @@ cmd_sleep:
     jnz .L_sleep_go
     movzx eax, word [numbuf + 2]
     cmp ax, 3
+    je .L_sleep_out
+    cmp ax, 0x001B
+    je .L_sleep_out
+    cmp ax, 'q'
+    je .L_sleep_out
+    cmp ax, 'Q'
     je .L_sleep_out
  .L_sleep_go:
     mov rax, [bs]
@@ -680,6 +698,12 @@ cmd_factor:
     jnz .L_factor_go
     movzx eax, word [numbuf + 2]
     cmp ax, 3
+    je .L_factor_done
+    cmp ax, 0x001B
+    je .L_factor_done
+    cmp ax, 'q'
+    je .L_factor_done
+    cmp ax, 'Q'
     je .L_factor_done
 .L_factor_go:
     cmp r12, rcx

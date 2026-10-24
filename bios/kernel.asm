@@ -437,8 +437,17 @@ cmd_yes:
 .L_yes:
     mov si, s_byes
     call puts
+    mov ah, 1
+    int 0x16
+    jz .L_yes_nokey
+    mov ah, 0
+    int 0x16
+    cmp al, 3
+    je .L_yes_done
+.L_yes_nokey:
     dec cx
     jnz .L_yes
+.L_yes_done:
     pop cx
     xor ax, ax
     ret
@@ -478,6 +487,14 @@ cmd_seq:
     mov ax, bx
     call print_dec
     call newline
+    mov ah, 1
+    int 0x16
+    jz .L_seq_nokey
+    mov ah, 0
+    int 0x16
+    cmp al, 3
+    je .done
+.L_seq_nokey:
     inc bx
     jmp .L_loop
 .done:
@@ -572,6 +589,14 @@ cmd_factor:
     mov cx, ax
     jmp .L_loopf
 .nextf:
+    mov ah, 1
+    int 0x16
+    jz .L_factor_nokey
+    mov ah, 0
+    int 0x16
+    cmp al, 3
+    je .done
+.L_factor_nokey:
     inc bx
     jmp .L_loopf
 .done:
