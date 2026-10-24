@@ -509,6 +509,195 @@ cmd_meow:
     add rsp, 40
     ret
 
+cmd_whoami:
+    sub rsp, 40
+    lea rsi, [s_whoami]
+    call puts
+    add rsp, 40
+    ret
+
+cmd_hostname:
+    sub rsp, 40
+    lea rsi, [s_hostname]
+    call puts
+    add rsp, 40
+    ret
+
+cmd_yes:
+    sub rsp, 40
+    mov ecx, 10
+.L_yes_loop:
+    lea rsi, [s_yes_word]
+    call puts
+    dec ecx
+    jnz .L_yes_loop
+    add rsp, 40
+    ret
+
+cmd_seq:
+    sub rsp, 40
+    mov rax, [argp]
+    xor rcx, rcx
+    mov rsi, rax
+.L_seq_parse:
+    movzx eax, word [rsi]
+    test ax, ax
+    jz .L_seq_done_parse
+    cmp ax, '0'
+    jb .L_seq_done_parse
+    cmp ax, '9'
+    ja .L_seq_done_parse
+    sub ax, '0'
+    imul rcx, 10
+    add rcx, rax
+    add rsi, 2
+    jmp .L_seq_parse
+.L_seq_done_parse:
+    cmp rcx, 0
+    jle .L_seq_out
+    mov r12, 1
+.L_seq_print:
+    cmp r12, rcx
+    jg .L_seq_out
+    mov rax, r12
+    call print_dec
+    lea rsi, [s_nl]
+    call puts
+    inc r12
+    jmp .L_seq_print
+.L_seq_out:
+    add rsp, 40
+    ret
+
+cmd_sleep:
+    sub rsp, 40
+    mov rax, [argp]
+    xor rcx, rcx
+    mov rsi, rax
+.L_sleep_parse:
+    movzx eax, word [rsi]
+    test ax, ax
+    jz .L_sleep_done
+    cmp ax, '0'
+    jb .L_sleep_done
+    cmp ax, '9'
+    ja .L_sleep_done
+    sub ax, '0'
+    imul rcx, 10
+    add rcx, rax
+    add rsi, 2
+    jmp .L_sleep_parse
+.L_sleep_done:
+    cmp rcx, 0
+    jle .L_sleep_out
+.L_sleep_loop:
+    mov rax, [bs]
+    mov edx, 1000000
+    sub rsp, 40
+    call [rax + 248]
+    add rsp, 40
+    dec rcx
+    jnz .L_sleep_loop
+.L_sleep_out:
+    add rsp, 40
+    ret
+
+
+cmd_true:
+    sub rsp, 40
+    add rsp, 40
+    ret
+
+cmd_false:
+    sub rsp, 40
+    mov eax, 1
+    add rsp, 40
+    ret
+
+cmd_factor:
+    sub rsp, 40
+    mov rax, [argp]
+    xor rcx, rcx
+    mov rsi, rax
+.L_factor_parse:
+    movzx eax, word [rsi]
+    test ax, ax
+    jz .L_factor_have
+    cmp ax, '0'
+    jb .L_factor_have
+    cmp ax, '9'
+    ja .L_factor_have
+    sub ax, '0'
+    imul rcx, 10
+    add rcx, rax
+    add rsi, 2
+    jmp .L_factor_parse
+.L_factor_have:
+    cmp rcx, 2
+    jl .L_factor_out
+    mov r12, 2
+.L_factor_loop:
+    cmp r12, rcx
+    jg .L_factor_out
+    mov rax, rcx
+    xor rdx, rdx
+    div r12
+    test rdx, rdx
+    jnz .L_factor_next
+    mov rax, r12
+    call print_dec
+    lea rsi, [s_nl]
+    call puts
+    mov rax, rcx
+    xor rdx, rdx
+    div r12
+    mov rcx, rax
+    jmp .L_factor_loop
+.L_factor_next:
+    inc r12
+    jmp .L_factor_loop
+.L_factor_out:
+    cmp rcx, 1
+    jle .L_factor_done
+    mov rax, rcx
+    call print_dec
+    lea rsi, [s_nl]
+    call puts
+.L_factor_done:
+    add rsp, 40
+    ret
+
+cmd_rev:
+    sub rsp, 40
+    mov rax, [argp]
+    test rax, rax
+    jz .L_rev_out
+    mov rsi, rax
+    xor rcx, rcx
+.L_rev_len:
+    movzx eax, word [rsi + rcx*2]
+    test ax, ax
+    jz .L_rev_print
+    inc rcx
+    jmp .L_rev_len
+.L_rev_print:
+    cmp rcx, 0
+    jz .L_rev_nl
+.L_rev_char:
+    dec rcx
+    movzx eax, word [rsi + rcx*2]
+    mov [numbuf], al
+    mov byte [numbuf + 1], 0
+    lea rsi, [numbuf]
+    call puts
+    test rcx, rcx
+    jnz .L_rev_char
+.L_rev_nl:
+    lea rsi, [s_nl]
+    call puts
+.L_rev_out:
+    add rsp, 40
+    ret
 cmd_reboot:
     sub rsp, 40
     mov rax, [rt]
@@ -533,15 +722,18 @@ cmd_poweroff:
 
 section .data
 
-s_banner  db `\r\n  adachiOS 0.2 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
+s_banner  db `\r\n  adachiOS 0.3 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
 s_prompt  db `:3 adachiOS:`,0
 s_prompt2 db `> `,0
-s_help    db `commands:\r\n  help      show this list\r\n  echo      echo your words back\r\n  clear     clear the screen\r\n  fetch     system, cpu and memory info\r\n  pwd       print the current directory\r\n  cd        change directory (cd DIR, cd to go home)\r\n  ls        list a directory (ls [DIR])\r\n  cat       print a file (cat FILE)\r\n  vi        edit a file (vi FILE, needs sudo outside /home)\r\n  touch     create an empty file (touch FILE)\r\n  mkdir     create a directory (mkdir DIR)\r\n  rm        delete a file (rm FILE)\r\n  cp        copy a file (cp SRC DST)\r\n  mv        move a file (mv SRC DST)\r\n  uname     kernel info\r\n  meow      :3\r\n  sudo      run one command as root (sudo CMD)\r\n  flappy    play flappy bird (space/w flap, q quit)\r\n  reboot    cold reboot\r\n  poweroff  power off\r\n  up/down   recall previous commands\r\n`,0
+s_help    db `commands:\r\n  help      show this list\r\n  echo      echo your words back\r\n  clear     clear the screen\r\n  fetch     system, cpu and memory info\r\n  pwd       print the current directory\r\n  cd        change directory (cd DIR, cd to go home)\r\n  ls        list a directory (ls [DIR])\r\n  cat       print a file (cat FILE)\r\n  vi        edit a file (vi FILE, needs sudo outside /home)\r\n  touch     create an empty file (touch FILE)\r\n  mkdir     create a directory (mkdir DIR)\r\n  rm        delete a file (rm FILE)\r\n  cp        copy a file (cp SRC DST)\r\n  mv        move a file (mv SRC DST)\r\n  uname     kernel info\r\n  meow      :3\r\n  true      do nothing\r\n  false     do nothing\r\n  factor N  factor a number\r\n  rev TEXT  reverse text\r\n  whoami    show user\r\n  hostname  show host\r\n  yes       repeat text\r\n  seq N     print 1..N\r\n  sleep N   wait seconds\r\n  sudo      run one command as root (sudo CMD)\r\n  flappy    play flappy bird (space/w flap, q quit)\r\n  reboot    cold reboot\r\n  poweroff  power off\r\n  up/down   recall previous commands\r\n`,0
 s_unknown db `adachiOS: command not found (rude)\r\n`,0
 s_sudo_use  db `usage: sudo CMD   (you start with only /home, sudo is root)\r\n`,0
 s_sudo_root db `sudo: you are already root for this command\r\n`,0
-s_uname   db `adachiOS 0.2 x86_64 UEFI\r\n`,0
+s_uname   db `adachiOS 0.3 x86_64 UEFI\r\n`,0
 s_meow    db `meow :3\r\n`,0
+s_whoami  db `adachi\r\n`,0
+s_hostname db `adachios\r\n`,0
+s_yes_word db `y\r\n`,0
 s_nl      db `\r\n`,0
 s_bs      db 8,' ',8,0
 
@@ -561,6 +753,15 @@ n_cp       db `cp`,0
 n_mv       db `mv`,0
 n_uname    db `uname`,0
 n_meow     db `meow`,0
+n_true     db `true`,0
+n_false    db `false`,0
+n_factor   db `factor`,0
+n_rev      db `rev`,0
+n_whoami   db `whoami`,0
+n_hostname db `hostname`,0
+n_yes      db `yes`,0
+n_seq      db `seq`,0
+n_sleep    db `sleep`,0
 n_sudo     db `sudo`,0
 n_reboot   db `reboot`,0
 n_poweroff db `poweroff`,0
@@ -583,6 +784,15 @@ cmdtab:
     dq n_mv,       cmd_mv
     dq n_uname,    cmd_uname
     dq n_meow,     cmd_meow
+    dq n_true,     cmd_true
+    dq n_false,    cmd_false
+    dq n_factor,   cmd_factor
+    dq n_rev,      cmd_rev
+    dq n_whoami,   cmd_whoami
+    dq n_hostname, cmd_hostname
+    dq n_yes,      cmd_yes
+    dq n_seq,      cmd_seq
+    dq n_sleep,    cmd_sleep
     dq n_flappy,   cmd_flappy
     dq n_reboot,   cmd_reboot
     dq n_poweroff, cmd_poweroff

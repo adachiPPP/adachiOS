@@ -415,6 +415,23 @@ cmd_reboot:
     out 0x64, al
     jmp 0xFFFF:0x0000
 
+; ---- network support (BIOS) ----
+
+section .data
+
+s_net_head      db `  adachiOS net`,13,10,0
+s_net_no_dev    db `net: no network device attached`,13,10,0
+s_nl            db 13,10,0
+
+section .bss
+
+np_dev           resw 1
+net_mac          resb 6
+ping_host         resb 16
+stdout           resw 1
+
+section .text
+
 cmd_poweroff:
     mov ax, 0x5301
     xor bx, bx
@@ -2102,12 +2119,12 @@ cpu_probe:
     ret
 
 
-s_banner    db `\r\n  adachiOS 0.2 - a tiny os :3 (bios build)\r\n  type 'help' if you are lost\r\n\r\n`,0
+s_banner    db `\r\n  adachiOS 0.3 - a tiny os :3 (bios build)\r\n  type 'help' if you are lost\r\n\r\n`,0
 s_prompt    db `:3 adachiOS:`,0
 s_prompt2   db `> `,0
-s_help      db `commands:\r\n  help      show this list\r\n  echo      echo your words back\r\n  clear     clear the screen\r\n  fetch     system, cpu and memory info\r\n  pwd       print the current directory\r\n  cd        change directory (cd DIR, cd to go home)\r\n  ls        list a directory (ls [DIR])\r\n  cat       print a file (cat FILE)\r\n  vi        edit a file (vi FILE, needs sudo outside /home)\r\n  touch     create an empty file (touch FILE)\r\n  mkdir     create a directory (mkdir DIR)\r\n  rm        delete a file (rm FILE)\r\n  cp        copy a file (cp SRC DST)\r\n  mv        rename a file (mv SRC DST)\r\n  flappy    play flappy bird (space/w flap, q quit)\r\n  uname     kernel info\r\n  meow      :3\r\n  sudo      run one command as root (sudo CMD)\r\n  reboot    reboot\r\n  poweroff  power off\r\n`,0
+s_help      db `commands:\r\n  help      show this list\r\n  echo      echo your words back\r\n  clear     clear the screen\r\n  fetch     system, cpu and memory info\r\n  pwd       print the current directory\r\n  cd        change directory (cd DIR, cd to go home)\r\n  ls        list a directory (ls [DIR])\r\n  cat       print a file (cat FILE)\r\n  vi        edit a file (vi FILE, needs sudo outside /home)\r\n  touch     create an empty file (touch FILE)\r\n  mkdir     create a directory (mkdir DIR)\r\n  rm        delete a file (rm FILE)\r\n  cp        copy a file (cp SRC DST)\r\n  mv        rename a file (mv SRC DST)\r\n  flappy    play flappy bird (space/w flap, q quit)\r\n  net       show network status\r\n  ping HOST  send ICMP echo requests to HOST\r\n  uname     kernel info\r\n  meow      :3\r\n  sudo      run one command as root (sudo CMD)\r\n  reboot    reboot\r\n  poweroff  power off\r\n`,0
 s_unknown   db `adachiOS: command not found (rude)\r\n`,0
-s_uname     db `adachiOS 0.2 i386 BIOS (16-bit real mode)\r\n`,0
+s_uname     db `adachiOS 0.3 i386 BIOS (16-bit real mode)\r\n`,0
 s_meow      db `meow :3\r\n`,0
 s_sudo_name db `sudo`,0
 s_sudo_use  db `usage: sudo CMD   (you start with only /home, sudo is root)\r\n`,0
@@ -2167,6 +2184,8 @@ n_mv        db `mv`,0
 n_flappy    db `flappy`,0
 n_uname     db `uname`,0
 n_meow      db `meow`,0
+n_net       db `net`,0
+n_ping      db `ping`,0
 n_sudo      db `sudo`,0
 n_reboot    db `reboot`,0
 n_poweroff  db `poweroff`,0
@@ -2189,6 +2208,8 @@ cmdtab:
     dw n_flappy,   cmd_flappy
     dw n_uname,    cmd_uname
     dw n_meow,     cmd_meow
+    dw n_net,      cmd_net
+    dw n_ping,     cmd_ping
     dw n_reboot,   cmd_reboot
     dw n_poweroff, cmd_poweroff
     dw 0, 0
@@ -2251,6 +2272,8 @@ cpu_brand   times 49 db 0
 cpu_name    times 64 db 0
 name83   times 11 db ' '
 linebuf  times MAXLINE db 0
+
+%include "ethernet_bios.inc"
 
 %include "bios/flappy.asm"
 %include "bios/vi.asm"

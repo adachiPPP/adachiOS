@@ -32,6 +32,7 @@ uefi_build() {
 
     mkdir -p build
 
+    nasm -f win64 -i. ethernet.asm -o build/ethernet.obj
     for src in adachiOS coreutils flappy vi; do
         nasm -f win64 -i. "$src.asm" -o "build/$src.obj"
     done
@@ -39,7 +40,7 @@ uefi_build() {
     # this KILLED me
     "$@" /subsystem:efi_application /entry:efi_main /nodefaultlib \
         /out:BOOTX64.EFI \
-        build/adachiOS.obj build/coreutils.obj build/flappy.obj build/vi.obj
+        build/adachiOS.obj build/coreutils.obj build/flappy.obj build/vi.obj build/ethernet.obj
 
     [ -f HELLO.TXT ] || printf 'hi from the boot partition\n' > HELLO.TXT
 
@@ -60,8 +61,8 @@ bios_build() {
 
     mkdir -p build
 
-    nasm -f bin bios/boot.asm -o build/boot.bin
-    nasm -f bin bios/kernel.asm -o build/KERNEL.BIN
+    nasm -f bin -i. bios/boot.asm -o build/boot.bin
+    nasm -f bin -i. bios/kernel.asm -o build/KERNEL.BIN
 
     boot_size=$(wc -c < build/boot.bin)
     if [ "$boot_size" -ne 450 ]; then
