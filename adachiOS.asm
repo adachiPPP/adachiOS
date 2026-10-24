@@ -527,10 +527,22 @@ cmd_yes:
     sub rsp, 40
     mov ecx, 10
 .L_yes_loop:
+    mov rax, [conin]
+    lea rdx, [numbuf]
+    sub rsp, 40
+    call [rax + 8]
+    add rsp, 40
+    test rax, rax
+    jnz .L_yes_print
+    movzx eax, word [numbuf + 2]
+    cmp ax, 3
+    je .L_yes_done
+.L_yes_print:
     lea rsi, [s_yes_word]
     call puts
     dec ecx
     jnz .L_yes_loop
+.L_yes_done:
     add rsp, 40
     ret
 
@@ -557,6 +569,17 @@ cmd_seq:
     jle .L_seq_out
     mov r12, 1
 .L_seq_print:
+    mov rax, [conin]
+    lea rdx, [numbuf]
+    sub rsp, 40
+    call [rax + 8]
+    add rsp, 40
+    test rax, rax
+    jnz .L_seq_go
+    movzx eax, word [numbuf + 2]
+    cmp ax, 3
+    je .L_seq_out
+.L_seq_go:
     cmp r12, rcx
     jg .L_seq_out
     mov rax, r12
@@ -591,6 +614,17 @@ cmd_sleep:
     cmp rcx, 0
     jle .L_sleep_out
 .L_sleep_loop:
+    mov rax, [conin]
+    lea rdx, [numbuf]
+    sub rsp, 40
+    call [rax + 8]
+    add rsp, 40
+    test rax, rax
+    jnz .L_sleep_go
+    movzx eax, word [numbuf + 2]
+    cmp ax, 3
+    je .L_sleep_out
+ .L_sleep_go:
     mov rax, [bs]
     mov edx, 1000000
     sub rsp, 40
@@ -637,6 +671,17 @@ cmd_factor:
     jl .L_factor_out
     mov r12, 2
 .L_factor_loop:
+    mov rax, [conin]
+    lea rdx, [numbuf]
+    sub rsp, 40
+    call [rax + 8]
+    add rsp, 40
+    test rax, rax
+    jnz .L_factor_go
+    movzx eax, word [numbuf + 2]
+    cmp ax, 3
+    je .L_factor_done
+.L_factor_go:
     cmp r12, rcx
     jg .L_factor_out
     mov rax, rcx
