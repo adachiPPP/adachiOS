@@ -410,6 +410,214 @@ cmd_meow:
     call puts
     ret
 
+
+cmd_whoami:
+    mov si, s_bwhoami
+    call puts
+    xor ax, ax
+    ret
+
+cmd_hostname:
+    mov si, s_bhostname
+    call puts
+    xor ax, ax
+    ret
+
+cmd_true:
+    xor ax, ax
+    ret
+
+cmd_false:
+    mov ax, 1
+    ret
+
+cmd_yes:
+    push cx
+    mov cx, 10
+.L_yes:
+    mov si, s_byes
+    call puts
+    dec cx
+    jnz .L_yes
+    pop cx
+    xor ax, ax
+    ret
+
+cmd_seq:
+    push bx
+    push cx
+    push dx
+    push si
+    mov si, [argp]
+    test si, si
+    jz .done
+    xor cx, cx
+    xor ax, ax
+.L_parse:
+    mov al, [si]
+    test al, al
+    jz .print
+    cmp al, '0'
+    jb .print
+    cmp al, '9'
+    ja .print
+    sub al, '0'
+    xchg ax, cx
+    mov bx, 10
+    mul bx
+    add cx, ax
+    inc si
+    jmp .L_parse
+.print:
+    test cx, cx
+    jle .done
+    mov bx, 1
+.L_loop:
+    cmp bx, cx
+    jg .done
+    mov ax, bx
+    call print_dec
+    call newline
+    inc bx
+    jmp .L_loop
+.done:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    xor ax, ax
+    ret
+
+cmd_sleep:
+    push cx
+    push dx
+    mov si, [argp]
+    test si, si
+    jz .done
+    xor cx, cx
+    xor ax, ax
+.L_parse2:
+    mov al, [si]
+    test al, al
+    jz .wait
+    cmp al, '0'
+    jb .wait
+    cmp al, '9'
+    ja .wait
+    sub al, '0'
+    xchg ax, cx
+    mov bx, 10
+    mul bx
+    add cx, ax
+    inc si
+    jmp .L_parse2
+.wait:
+    test cx, cx
+    jz .done2
+    mov ah, 0x86
+    mov cx, 0x000F
+    mov dx, 0x4240
+    int 0x15
+    dec cx
+    ; reload counter? keep simple one second only
+.done2:
+.done:
+    pop dx
+    pop cx
+    xor ax, ax
+    ret
+
+cmd_factor:
+    push bx
+    push cx
+    push dx
+    mov si, [argp]
+    test si, si
+    jz .done
+    xor cx, cx
+    xor ax, ax
+.L_pf:
+    mov al, [si]
+    test al, al
+    jz .have
+    cmp al, '0'
+    jb .have
+    cmp al, '9'
+    ja .have
+    sub al, '0'
+    xchg ax, cx
+    mov bx, 10
+    mul bx
+    add cx, ax
+    inc si
+    jmp .L_pf
+.have:
+    cmp cx, 2
+    jl .done
+    mov bx, 2
+.L_loopf:
+    cmp bx, cx
+    jg .done
+    mov ax, cx
+    xor dx, dx
+    div bx
+    test dx, dx
+    jnz .nextf
+    mov ax, bx
+    call print_dec
+    call newline
+    mov ax, cx
+    xor dx, dx
+    div bx
+    mov cx, ax
+    jmp .L_loopf
+.nextf:
+    inc bx
+    jmp .L_loopf
+.done:
+    cmp cx, 1
+    jle .finish
+    mov ax, cx
+    call print_dec
+    call newline
+.finish:
+    pop dx
+    pop cx
+    pop bx
+    xor ax, ax
+    ret
+
+cmd_rev:
+    push si
+    push bx
+    mov si, [argp]
+    test si, si
+    jz .done
+    mov bx, si
+.L_find:
+    cmp byte [bx], 0
+    je .print
+    inc bx
+    jmp .L_find
+.print:
+    dec bx
+    cmp bx, si
+    jb .done
+    mov al, [bx]
+    call putc
+    dec bx
+    cmp bx, si
+    jae .print
+.done:
+    mov al, 13
+    call putc
+    mov al, 10
+    call putc
+    pop bx
+    pop si
+    xor ax, ax
+    ret
+
 cmd_reboot:
     mov al, 0xFE
     out 0x64, al
@@ -421,6 +629,9 @@ section .data
 
 s_net_head      db `  adachiOS net`,13,10,0
 s_net_no_dev    db `net: no network device attached`,13,10,0
+s_bwhoami    db `adachi`,13,10,0
+s_bhostname  db `adachios`,13,10,0
+s_byes       db `y`,13,10,0
 s_nl            db 13,10,0
 
 section .bss
@@ -2184,6 +2395,15 @@ n_mv        db `mv`,0
 n_flappy    db `flappy`,0
 n_uname     db `uname`,0
 n_meow      db `meow`,0
+n_whoami    db `whoami`,0
+n_hostname  db `hostname`,0
+n_true      db `true`,0
+n_false     db `false`,0
+n_yes       db `yes`,0
+n_seq       db `seq`,0
+n_sleep     db `sleep`,0
+n_factor    db `factor`,0
+n_rev       db `rev`,0
 n_net       db `net`,0
 n_ping      db `ping`,0
 n_sudo      db `sudo`,0
@@ -2208,6 +2428,15 @@ cmdtab:
     dw n_flappy,   cmd_flappy
     dw n_uname,    cmd_uname
     dw n_meow,     cmd_meow
+    dw n_whoami,   cmd_whoami
+    dw n_hostname, cmd_hostname
+    dw n_true,     cmd_true
+    dw n_false,    cmd_false
+    dw n_yes,      cmd_yes
+    dw n_seq,      cmd_seq
+    dw n_sleep,    cmd_sleep
+    dw n_factor,   cmd_factor
+    dw n_rev,      cmd_rev
     dw n_net,      cmd_net
     dw n_ping,     cmd_ping
     dw n_reboot,   cmd_reboot
