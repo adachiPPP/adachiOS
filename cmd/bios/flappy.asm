@@ -232,7 +232,7 @@ fl_draw_pipes:
     jge .draw
     jmp .skip
 .draw:
-    mov [dp_col], bx            ; this KILLED me
+    mov [dp_col], bx
     mov ax, [dp_px]
     add ax, bx
     mov dx, 0x0A23

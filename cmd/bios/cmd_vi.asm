@@ -1,7 +1,9 @@
+%include "bios/prog.inc"
+
 VBUFMAX equ 4096
 VBUF    equ 0xE000
 
-cmd_vi:
+cmd_main:
     mov si, [argp]
     test si, si
     jz .usage
@@ -292,7 +294,7 @@ vi_insert_char:
     jae .r
     mov bl, al
     mov si, [vlen]
-.mv:                            ; gfdesbjdbshbhbhj
+.mv:
     cmp si, [vpos]
     jbe .place
     mov al, [VBUF + si - 1]
@@ -615,306 +617,27 @@ vi_cmd_exec:
     mov word [vmsgp], s_modwarn
     ret
 
-fat_next:
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push es
-    mov di, ax
-    mov dx, ax
-    shr ax, 1
-    add ax, dx
-    xor dx, dx
-    mov cx, 512
-    div cx
-    mov [vi_fat_off], dx
-    inc ax
-    mov bx, SCR_OFF
-    mov dx, KSEG
-    mov es, dx
-    call read_sector
-    inc ax
-    add bx, 512
-    call read_sector
-    mov si, [vi_fat_off]
-    add si, SCR_OFF
-    mov ax, [si]
-    test di, 1
-    jz .even
-    shr ax, 4
-    jmp .out
-.even:
-    and ax, 0x0FFF
-.out:
-    pop es
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    ret
-
-fat_set:
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push es
-    mov [vi_fat_cl], ax
-    mov [vi_fat_val], bx
-    mov dx, ax
-    shr ax, 1
-    add ax, dx
-    xor dx, dx
-    mov cx, 512
-    div cx
-    mov [vi_fat_off], dx
-    inc ax
-    mov [vi_lba], ax
-    mov bx, SCR_OFF
-    mov dx, KSEG
-    mov es, dx
-    call read_sector
-    mov si, [vi_fat_off]
-    add si, SCR_OFF
-    mov ax, [si]
-    mov dx, [vi_fat_cl]
-    test dx, 1
-    jz .even
-    and ax, 0x000F              ; mreow
-    mov dx, [vi_fat_val]
-    shl dx, 4
-    or ax, dx
-    jmp .store
-.even:
-    and ax, 0xF000
-    mov dx, [vi_fat_val]
-    and dx, 0x0FFF
-    or ax, dx
-.store:
-    mov [si], ax
-    mov ax, [vi_lba]
-    mov bx, SCR_OFF
-    mov dx, KSEG
-    mov es, dx
-    call write_sector
-    mov ax, [vi_lba]
-    add ax, 9
-    call write_sector
-    pop es
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-vi_alloc:
-    mov cx, 2
-.loop:
-    mov ax, cx
-    push cx
-    call fat_next
-    pop cx
-    test ax, ax
-    jz .found
-    inc cx
-    cmp cx, 2848
-    jb .loop
-    xor ax, ax
-    ret
-.found:
-    mov ax, cx
-    mov bx, 0x0FFF
-    push cx
-    call fat_set
-    pop ax
-    ret
-
-vi_free_chain:
-    cmp ax, 2
-    jb .done
-    cmp ax, 0xFF8
-    jae .done
-    mov [vi_cur], ax
-    call fat_next
-    mov [vi_tmp], ax
-    mov ax, [vi_cur]
-    xor bx, bx
-    call fat_set
-    mov ax, [vi_tmp]
-    jmp vi_free_chain
-.done:
-    ret
-
-vi_find:
-    mov byte [vi_found], 0
-    call dir_find
-    test al, al
-    jz .nf
-    mov ax, [res_off]
-    mov [vi_entry_off], ax
-    mov ax, [res_first]
-    mov [vi_first], ax
-    mov ax, [res_size]
-    mov [vi_size], ax
-    mov si, dirbuf
-    add si, [res_off]
-    mov di, ventry
-    call set_es_k
-    mov cx, 32
-.cp:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
-    dec cx
-    jnz .cp
-    mov byte [vi_found], 1
-.nf:
-    ret
-
-vi_find_free:
-    call dir_find_free
-    test al, al
-    jz .fail
-    mov ax, [res_off]
-    mov [vi_entry_off], ax
-    call entry_init
-    mov ax, 1
-    ret
-.fail:
-    xor ax, ax
-    ret
-
-vi_write_entry:
-    mov ax, [vi_entry_off]
-    mov [res_off], ax
-    call dir_write_entry
-    ret
-
 vi_load:
     mov word [vlen], 0
-    call vi_find
-    cmp byte [vi_found], 0
+    mov si, [argp]
+    cmp byte [si], 0
     je .done
-    mov word [vi_off], 0
-    mov ax, [vi_first]
-.rd:
-    cmp ax, 2
-    jb .fin
-    cmp ax, 0xFF8
-    jae .fin
-    mov [vi_cur], ax
-    add ax, 31
-    mov bx, SCR_OFF
-    mov dx, KSEG
-    mov es, dx
-    call read_sector
-    mov ax, [vi_size]
-    sub ax, [vi_off]
-    jbe .fin
-    cmp ax, 512
-    jbe .n1
-    mov ax, 512
-.n1:
+    mov di, VBUF
     mov cx, VBUFMAX
-    sub cx, [vi_off]
-    cmp ax, cx
-    jbe .n2
-    mov ax, cx
-.n2:
-    mov bx, ax
-    mov cx, bx
-    mov si, SCR_OFF
-    mov di, [vi_off]
-    add di, VBUF
-    cld
-    rep movsb
-    add [vi_off], bx
-    mov ax, [vi_cur]
-    call fat_next
-    jmp .rd
-.fin:
-    mov ax, [vi_off]
+    call lib_read_file
+    jc .done
     mov [vlen], ax
 .done:
     ret
 
 vi_save:
-    call vi_find
-    cmp byte [vi_found], 0
-    jne .have
-    call vi_find_free
-    test ax, ax
-    jz .fail
-.have:
-    cmp byte [vi_found], 0
-    je .noold
-    mov ax, [vi_first]
-    call vi_free_chain
-.noold:
-    mov word [vi_newfirst], 0
-    mov word [vi_prev], 0
-    mov word [vi_off], 0
-.wloop:
-    mov ax, [vi_off]
-    cmp ax, [vlen]
-    jae .wdone
-    call vi_alloc
-    test ax, ax
-    jz .fail
-    mov [vi_cur], ax
-    cmp word [vi_newfirst], 0
-    jne .link
-    mov [vi_newfirst], ax
-    jmp .wr
-.link:
-    mov ax, [vi_prev]
-    mov bx, [vi_cur]
-    call fat_set
-.wr:
-    mov di, SCR_OFF
-    mov cx, 512
-    xor al, al
-    mov dx, KSEG
-    mov es, dx
-    cld
-    rep stosb
-    mov si, [vi_off]
-    add si, VBUF
-    mov ax, [vlen]
-    sub ax, [vi_off]
-    cmp ax, 512
-    jbe .n
-    mov ax, 512
-.n:
-    mov bx, ax
-    mov cx, bx
-    mov di, SCR_OFF
-    rep movsb
-    mov ax, [vi_cur]
-    add ax, 31
-    mov bx, SCR_OFF
-    mov dx, KSEG
-    mov es, dx
-    call write_sector
-    mov ax, [vi_cur]
-    mov [vi_prev], ax
-    add word [vi_off], 512
-    jmp .wloop
-.wdone:
-    mov ax, [vi_newfirst]
-    mov [ventry + 26], ax
-    mov ax, [vlen]
-    mov [ventry + 28], ax
-    mov word [ventry + 30], 0
-    call vi_write_entry
+    mov si, [argp]
+    cmp byte [si], 0
+    je .fail
+    mov di, VBUF
+    mov cx, [vlen]
+    call lib_write_file
+    jc .fail
     mov byte [vmod], 0
     mov word [vmsgp], s_saved
     ret
@@ -956,13 +679,10 @@ vi_entry_off dw 0
 vi_first     dw 0
 vi_size      dw 0
 vi_off       dw 0
-vi_cur       dw 0
 vi_prev      dw 0
 vi_newfirst  dw 0
 vi_within    dw 0
-vi_lba       dw 0
-vi_fat_off   dw 0
-vi_fat_cl    dw 0
-vi_fat_val   dw 0
-vi_tmp       dw 0
-ventry       times 32 db 0
+
+%include "cmd/bios/cmd_strings.inc"
+
+%include "bios/lib.asm"

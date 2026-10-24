@@ -1,3 +1,6 @@
+%ifndef UEFI_INC
+%define UEFI_INC
+
 ST_FIRMWAREVENDOR equ 24
 ST_CONIN          equ 48
 ST_CONOUT         equ 64
@@ -18,6 +21,10 @@ BS_ALLOCATEPOOL   equ 64
 BS_FREEPOOL       equ 72
 BS_WAITFOREVENT   equ 96
 BS_HANDLEPROTOCOL equ 152
+BS_LOADIMAGE      equ 200
+BS_STARTIMAGE     equ 208
+BS_EXIT           equ 216
+BS_UNLOADIMAGE    equ 224
 BS_STALL          equ 248
 
 RT_RESETSYSTEM    equ 104
@@ -33,3 +40,13 @@ FILE_WRITE        equ 40
 FILE_GETINFO      equ 64
 
 EFI_CONV_MEMORY   equ 7
+
+FCTX_SYSTAB       equ 0
+FCTX_IMAGE        equ 8
+FCTX_DEVICE       equ 16
+FCTX_CWD          equ 24
+FCTX_ARGS         equ 32
+FCTX_ROOT         equ 40
+FCTX_SIZE         equ 48
+
+%endif

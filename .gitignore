@@ -1,4 +1,4 @@
-./*.obj
-./bios/*.obj
-./uefi/*.obj
-./*.img
+*.obj
+*.img
+/acc/acc
+/build/

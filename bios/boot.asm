@@ -22,7 +22,6 @@ start:
     int 0x13
     jc disk_error
 
-
     mov ax, 0x0800
     mov es, ax
     xor bx, bx
@@ -33,7 +32,6 @@ start:
     inc ax
     add bx, 512
     loop .root
-
 
     mov si, 0x8000
     mov cx, ROOT_ENT
@@ -74,7 +72,6 @@ found:
     call read_sector
     add bx, 512
 
-
     mov ax, [cluster]
     mov dx, ax
     shr ax, 1
@@ -93,7 +90,7 @@ found:
     call read_sector
     inc ax
     add bx, 512
-    call read_sector            ; gfdesbjdbshbhbhj
+    call read_sector
     pop bx
     pop es
 
@@ -114,7 +111,6 @@ loaded:
     mov dl, [drive]
     jmp KERNEL_SEG:0x0000
 
-
 read_sector:
     push ax
     push bx
@@ -124,12 +120,12 @@ read_sector:
     mov di, ax
     xor dx, dx
     mov cx, 36
-    div cx                      ; this KILLED me
+    div cx
     mov ch, al
     mov ax, dx
     xor dx, dx
     mov cl, 18
-    div cl                      ; mreow
+    div cl
     mov dh, al
     mov cl, ah
     inc cl

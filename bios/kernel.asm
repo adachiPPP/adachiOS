@@ -1,15 +1,9 @@
 bits 16
-org 0x0000
+org 0
 
 KSEG        equ 0x1000
-SCR_SEG     equ 0x1C00
-SCR_OFF     equ 0xC000
-ROOT_LBA    equ 19
-ROOT_SECT   equ 14
-ROOT_ENT    equ 224
-DATA_LBA    equ 33
-MAXLINE     equ 96
-DIRMAX      equ 14
+SELF_SEG    equ KSEG
+%include "bios/defs.inc"
 
 start:
     cli
@@ -40,7 +34,311 @@ start:
     call dispatch
     jmp .main
 
+readline:
+    mov ax, KSEG
+    mov es, ax
+    mov di, linebuf
+    xor cx, cx
+.loop:
+    xor ah, ah
+    int 0x16
+    cmp al, 13
+    je .enter
+    cmp al, 8
+    je .bs
+    cmp al, 32
+    jb .loop
+    cmp cx, MAXLINE - 1
+    jae .loop
+    stosb
+    inc cx
+    call putc
+    jmp .loop
+.bs:
+    test cx, cx
+    jz .loop
+    dec cx
+    dec di
+    mov al, 8
+    call putc
+    mov al, ' '
+    call putc
+    mov al, 8
+    call putc
+    jmp .loop
+.enter:
+    mov al, 0
+    stosb
+    call newline
+    ret
 
+dispatch:
+    cmp byte [linebuf], 0
+    je .ret
+.restart:
+    mov word [argp], 0
+    mov si, linebuf
+.find:
+    mov al, [si]
+    test al, al
+    jz .go
+    cmp al, ' '
+    je .space
+    inc si
+    jmp .find
+.space:
+    mov byte [si], 0
+    inc si
+    mov [argp], si
+.go:
+    mov si, linebuf
+    mov di, s_rodo_name
+    call strcmp
+    test al, al
+    jz .external
+    cmp byte [root_mode], 0
+    jne .rodo_root
+    mov si, [argp]
+    test si, si
+    jz .rodo_use
+    mov di, linebuf
+.mv:
+    mov al, [si]
+    mov [di], al
+    inc si
+    inc di
+    test al, al
+    jnz .mv
+    mov byte [root_mode], 1
+    jmp .restart
+.rodo_root:
+    mov si, s_rodo_root
+    call puts
+    ret
+.rodo_use:
+    mov si, s_rodo_use
+    call puts
+    ret
+.external:
+    call run_external
+    test ax, ax
+    jnz .out
+    mov si, s_unknown
+    call puts
+.out:
+    mov byte [root_mode], 0
+.ret:
+    ret
+
+run_external:
+    mov di, extpath
+    mov si, s_bin_a
+.cpbin:
+    mov al, [si]
+    mov [di], al
+    inc si
+    inc di
+    test al, al
+    jnz .cpbin
+    dec di
+
+    mov si, linebuf
+    xor cx, cx
+.cpname:
+    mov al, [si]
+    test al, al
+    jz .ext
+    cmp al, ' '
+    je .ext
+    cmp al, 'a'
+    jb .up
+    cmp al, 'z'
+    ja .up
+    sub al, 32
+.up:
+    cmp cx, 8
+    jae .skip
+    mov [di], al
+    inc di
+    inc cx
+.skip:
+    inc si
+    jmp .cpname
+.ext:
+    mov si, s_bin_ext
+.cpext:
+    mov al, [si]
+    mov [di], al
+    inc si
+    inc di
+    test al, al
+    jnz .cpext
+
+    mov si, extpath
+    call resolve
+    cmp byte [res_err], 0
+    jne .notfound
+    mov ax, [res_dir]
+    call dir_load
+    call dir_find
+    test al, al
+    jz .notfound
+    test byte [res_attr], 0x10
+    jnz .notfound
+    mov eax, [res_size]
+    test eax, eax
+    jz .bad
+    cmp eax, 0xE000
+    jae .bad
+    cmp eax, 16
+    jb .bad
+
+    mov ax, PROG_SEG
+    mov es, ax
+
+    xor di, di
+    xor ax, ax
+    mov cx, 0x7F00
+    rep stosw
+    xor bx, bx
+    mov ax, [res_first]
+    mov [load_cl], ax
+.rd:
+    mov ax, [load_cl]
+    cmp ax, 2
+    jb .loaded
+    cmp ax, 0xFF8
+    jae .loaded
+    add ax, DATA_LBA - 2
+    call read_sector
+    add bx, 512
+    mov ax, [load_cl]
+    call fat_next
+    mov [load_cl], ax
+    jmp .rd
+
+.loaded:
+    mov ax, PROG_SEG
+    mov es, ax
+    mov al, [drive]
+    mov [es:STATE_DRIVE], al
+    mov al, [root_mode]
+    mov [es:STATE_ROOT], al
+    mov ax, [cwd_cluster]
+    mov [es:STATE_CWDC], ax
+
+    mov si, cwd_path
+    mov di, STATE_CWDP
+    mov cx, 64
+.cpcwd:
+    mov al, [si]
+    mov [es:di], al
+    inc si
+    inc di
+    test al, al
+    jz .args
+    dec cx
+    jnz .cpcwd
+    mov byte [es:di-1], 0
+
+.args:
+    mov si, [argp]
+    test si, si
+    jnz .haveargs
+    mov si, empty
+.haveargs:
+    mov di, STATE_ARGS
+    mov cx, STATE_ARGS_MAX
+.cpargs:
+    mov al, [si]
+    mov [es:di], al
+    inc si
+    inc di
+    test al, al
+    jz .run
+    dec cx
+    jnz .cpargs
+    mov byte [es:di-1], 0
+
+.run:
+    mov [k_ss], ss
+    mov [k_sp], sp
+    mov [k_ds], ds
+    mov [k_es], es
+    cli
+    mov ax, PROG_SEG
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov sp, 0xFF00
+    cld
+    sti
+    call 0x2000:0x0000
+    cli
+    mov ax, cs
+    mov ds, ax
+    mov ss, [k_ss]
+    mov sp, [k_sp]
+    mov ax, [k_es]
+    mov es, ax
+    sti
+
+    mov ax, PROG_SEG
+    mov es, ax
+    mov al, [es:STATE_DRIVE]
+    mov [drive], al
+    mov al, [es:STATE_ROOT]
+    mov [root_mode], al
+    mov ax, [es:STATE_CWDC]
+    mov [cwd_cluster], ax
+
+    mov si, STATE_CWDP
+    mov di, cwd_path
+    mov cx, 64
+.cpcwd2:
+    mov al, [es:si]
+    mov [di], al
+    inc si
+    inc di
+    test al, al
+    jz .sync
+    dec cx
+    jnz .cpcwd2
+    mov byte [di-1], 0
+.sync:
+    mov ax, [cwd_cluster]
+    call dir_load
+    mov ax, 1
+    ret
+
+.bad:
+    mov si, s_badexec
+    call puts
+    mov ax, 1
+    ret
+.notfound:
+    xor ax, ax
+    ret
+
+strcmp:
+.l:
+    mov al, [si]
+    test al, al
+    jz .end
+    mov ah, [di]
+    cmp al, ah
+    jne .no
+    inc si
+    inc di
+    jmp .l
+.end:
+    cmp byte [di], 0
+    jne .no
+    mov al, 1
+    ret
+.no:
+    xor al, al
+    ret
 
 putc:
     push ax
@@ -95,142 +393,6 @@ newline:
     mov al, 10
     call putc
     ret
-
-
-
-readline:
-    mov ax, KSEG
-    mov es, ax
-    mov di, linebuf
-    xor cx, cx
-.loop:
-    xor ah, ah
-    int 0x16
-    cmp al, 13
-    je .enter
-    cmp al, 8
-    je .bs
-    cmp al, 32
-    jb .loop
-    cmp cx, MAXLINE - 1
-    jae .loop
-    stosb
-    inc cx
-    call putc
-    jmp .loop
-.bs:
-    test cx, cx
-    jz .loop
-    dec cx
-    dec di
-    mov al, 8
-    call putc
-    mov al, ' '
-    call putc
-    mov al, 8
-    call putc
-    jmp .loop
-.enter:
-    mov al, 0
-    stosb
-    call newline
-    ret
-
-
-
-dispatch:
-    cmp byte [linebuf], 0
-    je .ret
-.restart:
-    mov word [argp], 0
-    mov si, linebuf
-.find:
-    mov al, [si]
-    test al, al
-    jz .go
-    cmp al, ' '
-    je .space
-    inc si
-    jmp .find
-.space:
-    mov byte [si], 0
-    inc si
-    mov [argp], si
-.go:
-    mov si, linebuf
-    mov di, s_sudo_name
-    call strcmp
-    test al, al
-    jz .lookup
-    cmp byte [root_mode], 0
-    jne .sudo_root
-    mov si, [argp]
-    test si, si
-    jz .sudo_use
-    mov di, linebuf
-.mv:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
-    test al, al
-    jnz .mv
-    mov byte [root_mode], 1
-    jmp .restart
-.sudo_root:
-    mov si, s_sudo_root
-    call puts
-    ret
-.sudo_use:
-    mov si, s_sudo_use
-    call puts
-    ret
-.lookup:
-    mov bx, cmdtab
-.try:
-    mov si, [bx]
-    test si, si
-    jz .unknown
-    mov di, linebuf
-    call strcmp
-    test al, al
-    jnz .found
-    add bx, 4
-    jmp .try
-.found:
-    call word [bx + 2]
-    mov byte [root_mode], 0
-.ret:
-    ret
-.unknown:
-    mov si, s_unknown
-    call puts
-    mov byte [root_mode], 0
-    ret
-
-
-strcmp:
-.l:
-    mov al, [si]
-    test al, al
-    jz .end
-    mov ah, [di]
-    cmp al, ah
-    jne .no
-    inc si
-    inc di
-    jmp .l
-.end:
-    cmp byte [di], 0
-    jne .no
-    mov al, 1
-    ret
-.no:
-    xor al, al
-    ret
-
-
-
 
 read_sector:
     push ax
@@ -297,400 +459,6 @@ disk_error:
     cli
     hlt
     jmp .h
-
-
-
-
-
-cmd_help:
-    mov si, s_help
-    call puts
-    ret
-
-cmd_echo:
-    mov si, [argp]
-    test si, si
-    jz .nl
-    call puts
-.nl:
-    call newline
-    ret
-
-cmd_clear:
-    mov ax, 0x0003
-    int 0x10
-    ret
-
-cmd_fetch:
-    call cpu_probe
-    mov si, s_f_head
-    call puts
-    mov si, s_f_cpu
-    call puts
-    mov si, cpu_name
-    call puts
-    call newline
-    mov si, s_f_cores
-    call puts
-    mov ax, [cpu_cores]
-    call print_dec
-    call newline
-    mov si, s_f_threads
-    call puts
-    mov ax, [cpu_threads]
-    call print_dec
-    call newline
-    mov si, s_f_arch
-    call puts
-    call mem_probe
-    mov si, s_f_mem
-    call puts
-    mov ax, [mem_mib]
-    call print_dec
-    mov si, s_f_mib
-    call puts
-    mov si, s_f_low
-    call puts
-    mov ax, [mem_lo]
-    call print_dec
-    mov si, s_f_kib
-    call puts
-    mov si, s_f_boot
-    call puts
-    mov al, [drive]
-    add al, '0'
-    call putc
-    call newline
-    ret
-
-mem_probe:
-    int 0x12
-    mov [mem_lo], ax
-    mov word [mem_kb], ax
-    mov word [mem_kb + 2], 0
-    mov ax, 0xE801
-    int 0x15
-    jc .fallback
-    add word [mem_kb], ax
-    adc word [mem_kb + 2], 0
-    mov ax, bx
-    xor dx, dx
-    mov cx, 6
-.shift:                         ; this KILLED me
-    shl ax, 1
-    rcl dx, 1
-    loop .shift
-    add word [mem_kb], ax
-    adc word [mem_kb + 2], dx
-    jmp .calc
-.fallback:
-    mov ax, 0x88
-    int 0x15
-    jc .calc
-    add word [mem_kb], ax
-    adc word [mem_kb + 2], 0
-.calc:
-    mov ax, [mem_kb]
-    mov dx, [mem_kb + 2]
-    mov cx, 10
-.shr:
-    shr dx, 1
-    rcr ax, 1
-    loop .shr
-    mov [mem_mib], ax
-    ret
-
-cmd_uname:
-    mov si, s_uname
-    call puts
-    ret
-
-cmd_meow:
-    mov si, s_meow
-    call puts
-    ret
-
-
-cmd_whoami:
-    mov si, s_bwhoami
-    call puts
-    xor ax, ax
-    ret
-
-cmd_hostname:
-    mov si, s_bhostname
-    call puts
-    xor ax, ax
-    ret
-
-cmd_true:
-    xor ax, ax
-    ret
-
-cmd_false:
-    mov ax, 1
-    ret
-
-cmd_yes:
-    push cx
-    mov cx, 10
-.L_yes:
-    mov si, s_byes
-    call puts
-    mov ah, 1
-    int 0x16
-    jz .L_yes_nokey
-    mov ah, 0
-    int 0x16
-    cmp al, 3
-    je .L_yes_done
-.L_yes_nokey:
-    dec cx
-    jnz .L_yes
-.L_yes_done:
-    pop cx
-    xor ax, ax
-    ret
-
-cmd_seq:
-    push bx
-    push cx
-    push dx
-    push si
-    mov si, [argp]
-    test si, si
-    jz .done
-    xor cx, cx
-    xor ax, ax
-.L_parse:
-    mov al, [si]
-    test al, al
-    jz .print
-    cmp al, '0'
-    jb .print
-    cmp al, '9'
-    ja .print
-    sub al, '0'
-    xchg ax, cx
-    mov bx, 10
-    mul bx
-    add cx, ax
-    inc si
-    jmp .L_parse
-.print:
-    test cx, cx
-    jle .done
-    mov bx, 1
-.L_loop:
-    cmp bx, cx
-    jg .done
-    mov ax, bx
-    call print_dec
-    call newline
-    mov ah, 1
-    int 0x16
-    jz .L_seq_nokey
-    mov ah, 0
-    int 0x16
-    cmp al, 3
-    je .done
-.L_seq_nokey:
-    inc bx
-    jmp .L_loop
-.done:
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    xor ax, ax
-    ret
-
-cmd_sleep:
-    push cx
-    push dx
-    mov si, [argp]
-    test si, si
-    jz .done
-    xor cx, cx
-    xor ax, ax
-.L_parse2:
-    mov al, [si]
-    test al, al
-    jz .wait
-    cmp al, '0'
-    jb .wait
-    cmp al, '9'
-    ja .wait
-    sub al, '0'
-    xchg ax, cx
-    mov bx, 10
-    mul bx
-    add cx, ax
-    inc si
-    jmp .L_parse2
-.wait:
-    test cx, cx
-    jz .done2
-    mov ah, 0x86
-    mov cx, 0x000F
-    mov dx, 0x4240
-    int 0x15
-    dec cx
-    ; reload counter? keep simple one second only
-.done2:
-.done:
-    pop dx
-    pop cx
-    xor ax, ax
-    ret
-
-cmd_factor:
-    push bx
-    push cx
-    push dx
-    mov si, [argp]
-    test si, si
-    jz .done
-    xor cx, cx
-    xor ax, ax
-.L_pf:
-    mov al, [si]
-    test al, al
-    jz .have
-    cmp al, '0'
-    jb .have
-    cmp al, '9'
-    ja .have
-    sub al, '0'
-    xchg ax, cx
-    mov bx, 10
-    mul bx
-    add cx, ax
-    inc si
-    jmp .L_pf
-.have:
-    cmp cx, 2
-    jl .done
-    mov bx, 2
-.L_loopf:
-    cmp bx, cx
-    jg .done
-    mov ax, cx
-    xor dx, dx
-    div bx
-    test dx, dx
-    jnz .nextf
-    mov ax, bx
-    call print_dec
-    call newline
-    mov ax, cx
-    xor dx, dx
-    div bx
-    mov cx, ax
-    jmp .L_loopf
-.nextf:
-    mov ah, 1
-    int 0x16
-    jz .L_factor_nokey
-    mov ah, 0
-    int 0x16
-    cmp al, 3
-    je .done
-.L_factor_nokey:
-    inc bx
-    jmp .L_loopf
-.done:
-    cmp cx, 1
-    jle .finish
-    mov ax, cx
-    call print_dec
-    call newline
-.finish:
-    pop dx
-    pop cx
-    pop bx
-    xor ax, ax
-    ret
-
-cmd_rev:
-    push si
-    push bx
-    mov si, [argp]
-    test si, si
-    jz .done
-    mov bx, si
-.L_find:
-    cmp byte [bx], 0
-    je .print
-    inc bx
-    jmp .L_find
-.print:
-    dec bx
-    cmp bx, si
-    jb .done
-    mov al, [bx]
-    call putc
-    dec bx
-    cmp bx, si
-    jae .print
-.done:
-    mov al, 13
-    call putc
-    mov al, 10
-    call putc
-    pop bx
-    pop si
-    xor ax, ax
-    ret
-
-cmd_reboot:
-    mov al, 0xFE
-    out 0x64, al
-    jmp 0xFFFF:0x0000
-
-; ---- network support (BIOS) ----
-
-section .data
-
-s_net_head      db `  adachiOS net`,13,10,0
-s_net_no_dev    db `net: no network device attached`,13,10,0
-s_bwhoami    db `adachi`,13,10,0
-s_bhostname  db `adachios`,13,10,0
-s_byes       db `y`,13,10,0
-s_nl            db 13,10,0
-
-section .bss
-
-np_dev           resw 1
-net_mac          resb 6
-ping_host         resb 16
-stdout           resw 1
-
-section .text
-
-cmd_poweroff:
-    mov ax, 0x5301
-    xor bx, bx
-    int 0x15
-    mov ax, 0x5307
-    mov bx, 0x0001
-    mov cx, 0x0003
-    int 0x15
-    mov ax, 0x2000
-    mov dx, 0x0604
-    out dx, ax
-    mov dx, 0xB004
-    out dx, ax
-    mov si, s_off
-    call puts
-.h:
-    cli
-    hlt
-    jmp .h
-
-; ---------------------------------------------------------------------------
-; tiny FAT12 layer: every path resolves against [cwd_cluster]
-; ---------------------------------------------------------------------------
 
 set_es_k:
     push ax
@@ -823,8 +591,6 @@ strcpy:
     test al, al
     jnz .l
     ret
-
-; --- path resolution -------------------------------------------------------
 
 resolve:
     mov [path_in], si
@@ -1070,8 +836,6 @@ pb_up:
     mov word [pb_end], pathbuf + 1
     ret
 
-; --- directory buffers -----------------------------------------------------
-
 dir_load:
     mov [dir_cluster], ax
     cmp ax, 0
@@ -1166,130 +930,6 @@ dir_find:
     mov al, 1
     ret
 
-dir_find_free:
-    mov si, dirbuf
-    mov cx, [dir_ns]
-    shl cx, 4
-.scan:
-    mov al, [si]
-    test al, al
-    jz .found
-    cmp al, 0xE5
-    je .found
-    add si, 32
-    dec cx
-    jnz .scan
-    call dir_grow
-    test ax, ax
-    jz .fail
-    mov si, [dir_new_off]
-.found:
-    mov ax, si
-    sub ax, dirbuf
-    mov [res_off], ax
-    mov al, 1
-    ret
-.fail:
-    xor al, al
-    ret
-
-dir_grow:
-    mov ax, [dir_cluster]
-    test ax, ax
-    jz .fail
-    mov cx, 40
-.last:
-    mov [tmp_cl], ax
-    call fat_next
-    cmp ax, 2
-    jb .fail
-    cmp ax, 0xFF8
-    jae .append
-    dec cx
-    jnz .last
-    jmp .fail
-.append:
-    call vi_alloc
-    test ax, ax
-    jz .fail
-    mov [tmp_new], ax
-    mov bx, ax
-    mov ax, [tmp_cl]
-    call fat_set
-    mov ax, [dir_ns]
-    cmp ax, DIRMAX
-    jae .fail
-    mov bx, ax
-    shl bx, 9
-    add bx, dirbuf
-    mov di, bx
-    mov cx, 512
-    xor al, al
-.zero:
-    mov [di], al
-    inc di
-    dec cx
-    jnz .zero
-    mov bx, [dir_ns]
-    shl bx, 1
-    mov ax, [tmp_new]
-    add ax, 31
-    mov [dir_lba + bx], ax
-    mov [tmp_lba], ax
-    mov bx, [dir_ns]
-    shl bx, 9
-    add bx, dirbuf
-    mov dx, KSEG
-    mov es, dx
-    mov ax, [tmp_lba]
-    call write_sector
-    inc word [dir_ns]
-    mov ax, [dir_ns]
-    dec ax
-    shl ax, 9
-    add ax, dirbuf
-    mov [dir_new_off], ax
-    mov ax, 1
-    ret
-.fail:
-    xor ax, ax
-    ret
-
-dir_write_entry:
-    mov di, [res_off]
-    add di, dirbuf
-    mov si, ventry
-    mov cx, 32
-.mem:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
-    dec cx
-    jnz .mem
-    mov ax, [res_off]
-    mov bx, ax
-    shr bx, 9
-    shl bx, 1
-    mov ax, [dir_lba + bx]
-    mov [tmp_lba], ax
-    mov bx, SCR_OFF
-    mov dx, SCR_SEG
-    mov es, dx
-    call read_sector
-    mov di, [res_off]
-    and di, 0x1FF
-    add di, SCR_OFF
-    mov si, ventry
-    mov cx, 16
-    rep movsw
-    mov ax, [tmp_lba]
-    mov bx, SCR_OFF
-    mov dx, SCR_SEG
-    mov es, dx
-    call write_sector
-    ret
-
 dir_up:
     cmp ax, 0
     jne .sub
@@ -1301,243 +941,12 @@ dir_up:
     mov dx, SCR_SEG
     mov es, dx
     call read_sector
-    mov ax, [SCR_OFF + 32 + 26]
+    mov bx, SCR_OFF + 32 + 26
+    mov ax, [es:bx]
     cmp ax, 2
     jae .ok
     xor ax, ax
 .ok:
-    ret
-
-dir_empty:
-    mov ax, [res_first]
-.next:
-    cmp ax, 2
-    jb .yes
-    cmp ax, 0xFF8
-    jae .yes
-    mov [tmp_cl], ax
-    add ax, 31
-    xor bx, bx
-    mov dx, SCR_SEG
-    mov es, dx
-    call read_sector
-    mov si, SCR_OFF
-    mov cx, 16
-.scan:
-    mov al, [si]
-    test al, al
-    jz .yes
-    cmp al, 0xE5
-    je .nextent
-    cmp byte [si + 11], 0x0F
-    je .nextent
-    call is_dot
-    test al, al
-    jnz .nextent
-    xor al, al
-    ret
-.nextent:
-    add si, 32
-    dec cx
-    jnz .scan
-    mov ax, [tmp_cl]
-    call fat_next
-    jmp .next
-.yes:
-    mov al, 1
-    ret
-
-; --- permissions -----------------------------------------------------------
-
-path_can_write:
-    cmp byte [root_mode], 0
-    jne .yes
-    mov si, pathbuf
-    mov di, s_home_a
-.l:
-    mov al, [di]
-    test al, al
-    jz .pref
-    cmp al, [si]
-    jne .no
-    inc di
-    inc si
-    jmp .l
-.pref:
-    mov al, [si]
-    test al, al
-    jz .yes
-    cmp al, '\'
-    je .yes
-.no:
-    xor al, al
-    ret
-.yes:
-    mov al, 1
-    ret
-
-need_write:
-    call path_can_write
-    test al, al
-    jnz .ok
-    mov si, s_denied
-    call puts
-    xor al, al
-    ret
-.ok:
-    mov al, 1
-    ret
-
-
-split_args:
-    mov word [arg1], 0
-    mov word [arg2], 0
-    mov si, [argp]
-    test si, si
-    jz .ret
-    cmp byte [si], 0
-    je .ret
-    mov [arg1], si
-.findsp:
-    mov al, [si]
-    test al, al
-    jz .ret
-    cmp al, ' '
-    je .sp
-    inc si
-    jmp .findsp
-.sp:
-    mov byte [si], 0
-    inc si
-.skip:
-    mov al, [si]
-    cmp al, ' '
-    jne .set
-    inc si
-    jmp .skip
-.set:
-    test al, al
-    jz .ret
-    mov [arg2], si
-.ret:
-    ret
-
-args_same:
-    mov si, [arg1]
-    mov di, [arg2]
-.l:
-    mov al, [si]
-    cmp al, [di]
-    jne .no
-    test al, al
-    jz .yes
-    inc si
-    inc di
-    jmp .l
-.yes:
-    mov al, 1
-    ret
-.no:
-    xor al, al
-    ret
-
-; --- commands --------------------------------------------------------------
-
-print_name:
-    push si
-    push cx
-    xor bx, bx
-    mov cx, 8
-.n:
-    mov al, [si + bx]
-    cmp al, ' '
-    je .skip
-    call putc
-.skip:
-    inc bx
-    loop .n
-    mov al, [si + 8]
-    cmp al, ' '
-    je .done
-    mov al, '.'
-    call putc
-    xor bx, bx
-    mov cx, 3
-.e:
-    mov al, [si + 8 + bx]
-    cmp al, ' '
-    je .eskip
-    call putc
-.eskip:
-    inc bx
-    loop .e
-.done:
-    pop cx
-    pop si
-    ret
-
-cmd_ls:
-    mov si, [argp]
-    test si, si
-    jz .cwd
-    cmp byte [si], 0
-    je .cwd
-    call resolve
-    cmp byte [res_err], 0
-    jne .err
-    call name_is_blank
-    test al, al
-    jnz .loaddir
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jz .err
-    test byte [res_attr], 0x10
-    jz .err
-    mov ax, [res_first]
-    jmp .load
-.loaddir:
-    mov ax, [res_dir]
-.load:
-    call dir_load
-    jmp .list
-.cwd:
-    mov ax, [cwd_cluster]
-    call dir_load
-.list:
-    mov si, dirbuf
-    mov cx, [dir_ns]
-    shl cx, 4
-.ent:
-    mov al, [si]
-    test al, al
-    jz .done
-    cmp al, 0xE5
-    je .next
-    cmp byte [si + 11], 0x0F
-    je .next
-    test byte [si + 11], 0x08
-    jnz .next
-    call is_dot
-    test al, al
-    jnz .next
-    call print_name
-    test byte [si + 11], 0x10
-    jz .nl
-    mov al, '/'
-    call putc
-.nl:
-    call newline
-.next:
-    add si, 32
-    dec cx
-    jnz .ent
-.done:
-    ret
-.err:
-    mov si, s_ls_err
-    call puts
     ret
 
 init_cwd:
@@ -1554,980 +963,104 @@ init_cwd:
     jz .done
     mov ax, [res_first]
     mov [cwd_cluster], ax
-    call dir_load
-.done:
-    ret
-
-cmd_pwd:
-    mov si, cwd_path
-    call puts
-    call newline
-    ret
-
-cmd_cd:
-    mov si, [argp]
-    test si, si
-    jz .home
-    cmp byte [si], 0
-    je .home
-    call resolve
-    cmp byte [res_err], 0
-    jne .nf
-    call name_is_blank
-    test al, al
-    jz .lookup
-    mov ax, [res_dir]
-    jmp .have
-.lookup:
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jz .nf
-    test byte [res_attr], 0x10
-    jz .nd
-    mov ax, [res_first]
-    jmp .have
-.home:
-    mov si, s_home_a
-    call resolve
-    cmp byte [res_err], 0
-    jne .nf
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jz .nf
-    test byte [res_attr], 0x10
-    jz .nd
-    mov ax, [res_first]
-.have:
-    mov [cwd_cluster], ax
     mov si, pathbuf
     mov di, cwd_path
-    call set_es_k
-.cp:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
-    test al, al
-    jnz .cp
-    mov ax, [cwd_cluster]
+    call strcpy
     call dir_load
-    ret
-.nf:
-    mov si, s_cd_nf
-    call puts
-    ret
-.nd:
-    mov si, s_cd_nd
-    call puts
-    ret
-
-cmd_cat:
-    mov si, [argp]
-    test si, si
-    jz .usage
-    cmp byte [si], 0
-    je .usage
-    call resolve
-    cmp byte [res_err], 0
-    jne .nf
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jz .nf
-    test byte [res_attr], 0x10
-    jnz .isdir
-    mov ax, [res_first]
-    mov [cluster], ax
-    mov ax, [res_size]
-    mov [fsize], ax
-    mov ax, [res_size + 2]
-    mov [fsize + 2], ax
-.rd:
-    mov ax, [fsize]
-    or ax, [fsize + 2]
-    jz .ok
-    mov ax, [cluster]
-    cmp ax, 2
-    jb .ok
-    cmp ax, 0xFF8
-    jae .ok
-    add ax, DATA_LBA - 2
-    mov [tmp_lba], ax
-    mov bx, 0
-    mov dx, SCR_SEG
-    mov es, dx
-    call read_sector
-    mov bp, [fsize]
-    cmp bp, 512
-    jbe .sz
-    mov bp, 512
-.sz:
-    mov si, SCR_OFF
-    mov cx, bp
-.pr:
-    mov al, [si]
-    inc si
-    cmp al, 10
-    jne .raw
-    mov al, 13
-    call putc
-    mov al, 10
-.raw:
-    call putc
-    loop .pr
-    mov ax, [fsize]
-    sub ax, bp
-    mov [fsize], ax
-    mov ax, [fsize + 2]
-    sbb ax, 0
-    mov [fsize + 2], ax
-    mov ax, [cluster]
-    call fat_next
-    mov [cluster], ax
-    jmp .rd
-.ok:
-    ret
-.nf:
-    mov si, s_cat_nf
-    call puts
-    ret
-.isdir:
-    mov si, s_is_dir
-    call puts
-    ret
-.usage:
-    mov si, s_cat_use
-    call puts
-    ret
-
-cmd_rm:
-    call split_args
-    mov si, [arg1]
-    test si, si
-    jz .usage
-    call resolve
-    cmp byte [res_err], 0
-    jne .nodir
-    call need_write
-    test al, al
-    jz .done
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jz .nf
-    test byte [res_attr], 0x10
-    jz .free
-    call dir_empty
-    test al, al
-    jz .busy
-.free:
-    mov ax, [res_first]
-    call vi_free_chain
-    mov si, dirbuf
-    add si, [res_off]
-    mov di, ventry
-    call set_es_k
-    mov cx, 32
-    rep movsb
-    mov byte [ventry], 0xE5
-    call dir_write_entry
 .done:
     ret
-.nodir:
-    mov si, s_no_dir
-    call puts
-    ret
-.busy:
-    mov si, s_rm_busy
-    call puts
-    ret
-.nf:
-    mov si, s_rm_nf
-    call puts
-    ret
-.usage:
-    mov si, s_rm_use
-    call puts
-    ret
 
-cmd_touch:
-    call split_args
-    mov si, [arg1]
-    test si, si
-    jz .usage
-    call resolve
-    cmp byte [res_err], 0
-    jne .nodir
-    call need_write
-    test al, al
-    jz .done
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jnz .done
-    call dir_find_free
-    test al, al
-    jz .full
-    call entry_init
-    mov word [ventry + 26], 0
-    mov word [ventry + 28], 0
-    mov word [ventry + 30], 0
-    call dir_write_entry
-.done:
-    ret
-.nodir:
-    mov si, s_no_dir
-    call puts
-    ret
-.full:
-    mov si, s_no_space
-    call puts
-    ret
-.usage:
-    mov si, s_touch_use
-    call puts
-    ret
-
-cmd_mkdir:
-    call split_args
-    mov si, [arg1]
-    test si, si
-    jz .usage
-    call resolve
-    cmp byte [res_err], 0
-    jne .nodir
-    call need_write
-    test al, al
-    jz .done
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jnz .exists
-    call dir_find_free
-    test al, al
-    jz .full
-    call vi_alloc
-    test ax, ax
-    jz .full
-    mov [mk_cl], ax
-    call entry_init
-    mov dx, SCR_SEG
-    mov es, dx
-    mov di, SCR_OFF
-    xor ax, ax
-    mov cx, 256
-    rep stosw
-    mov di, SCR_OFF
-    mov al, ' '
-    mov cx, 11
-.fill:
-    stosb
-    loop .fill
-    mov di, SCR_OFF
-    mov al, '.'
-    stosb
-    mov di, SCR_OFF + 11
-    mov al, 0x10
-    stosb
-    mov di, SCR_OFF + 26
-    mov ax, [mk_cl]
-    stosw
-    mov di, SCR_OFF + 32
-    mov al, ' '
-    mov cx, 11
-.fill2:
-    stosb
-    loop .fill2
-    mov di, SCR_OFF + 32
-    mov al, '.'
-    stosb
-    stosb
-    mov di, SCR_OFF + 32 + 11
-    mov al, 0x10
-    stosb
-    mov di, SCR_OFF + 32 + 26
-    mov ax, [res_dir]
-    stosw
-    mov ax, [mk_cl]
-    add ax, 31
+fat_next:
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+    mov di, ax
+    mov dx, ax
+    shr ax, 1
+    add ax, dx
+    xor dx, dx
+    mov cx, 512
+    div cx
+    mov [vi_fat_off], dx
+    inc ax
     mov bx, SCR_OFF
     mov dx, SCR_SEG
     mov es, dx
-    call write_sector
-    mov byte [ventry + 11], 0x10
-    mov ax, [mk_cl]
-    mov [ventry + 26], ax
-    mov word [ventry + 28], 0
-    mov word [ventry + 30], 0
-    call dir_write_entry
-.done:
-    ret
-.nodir:
-    mov si, s_no_dir
-    call puts
-    ret
-.exists:
-    mov si, s_mk_ex
-    call puts
-    ret
-.full:
-    mov si, s_no_space
-    call puts
-    ret
-.usage:
-    mov si, s_mk_use
-    call puts
-    ret
-
-cp_prepare_src:
-    mov si, [arg1]
-    call resolve
-    cmp byte [res_err], 0
-    jne .nf
-    mov ax, [res_dir]
-    mov [cp_srcdir], ax
-    mov si, name83
-    mov di, cp_name
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    mov ax, [cp_srcdir]
-    call dir_load
-    mov si, cp_name
-    mov di, name83
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    call dir_find
-    test al, al
-    jz .nf
-    test byte [res_attr], 0x10
-    jnz .isdir
-    mov ax, [res_first]
-    mov [cp_src], ax
-    mov ax, [res_size]
-    mov [cp_size], ax
-    mov ax, [res_size + 2]
-    mov [cp_size + 2], ax
-    mov al, 1
-    ret
-.nf:
-    mov si, s_cp_nf
-    call puts
-    xor al, al
-    ret
-.isdir:
-    mov si, s_is_dir
-    call puts
-    xor al, al
-    ret
-
-cp_prepare_dst:
-    mov si, [arg2]
-    call resolve
-    cmp byte [res_err], 0
-    jne .nodir
-    call need_write
-    test al, al
-    jz .no
-    mov ax, [res_dir]
-    call dir_load
-    call dir_find
-    test al, al
-    jz .newdst
-    test byte [res_attr], 0x10
-    jnz .isdir
-    mov byte [cp_have], 1
-    mov ax, [res_first]
-    call vi_free_chain
-    mov al, 1
-    ret
-.newdst:
-    call dir_find_free
-    test al, al
-    jz .full
-    mov byte [cp_have], 1
-    mov al, 1
-    ret
-.nodir:
-    mov si, s_no_dir
-    call puts
-    jmp .no
-.isdir:
-    mov si, s_is_dir
-    call puts
-    jmp .no
-.full:
-    mov si, s_no_space
-    call puts
-.no:
-    mov byte [cp_have], 0
-    xor al, al
-    ret
-
-cp_copy:
-    mov word [cp_new], 0
-    mov word [cp_prev], 0
-    mov ax, [cp_src]
-    cmp ax, 2
-    jb .fin
-    cmp ax, 0xFF8
-    jae .fin
-.cl:
-    mov [tmp_cl], ax
-    add ax, 31
-    mov bx, cpbuf
-    mov dx, KSEG
-    mov es, dx
     call read_sector
-    call vi_alloc
-    test ax, ax
-    jz .full
-    mov [cp_dst], ax
-    cmp word [cp_new], 0
-    jne .link
-    mov [cp_new], ax
-    jmp .write
-.link:
-    mov bx, ax
-    mov ax, [cp_prev]
-    call fat_set
-.write:
-    mov ax, [cp_dst]
-    add ax, 31
-    mov bx, cpbuf
-    mov dx, KSEG
+    inc ax
+    add bx, 512
+    call read_sector
+    mov dx, SCR_SEG
     mov es, dx
-    call write_sector
-    mov ax, [cp_dst]
-    mov [cp_prev], ax
-    mov ax, [tmp_cl]
-    call fat_next
-    cmp ax, 2
-    jb .fin
-    cmp ax, 0xFF8
-    jae .fin
-    jmp .cl
-.fin:
-    call entry_init
-    mov ax, [cp_new]
-    mov [ventry + 26], ax
-    mov ax, [cp_size]
-    mov [ventry + 28], ax
-    mov ax, [cp_size + 2]
-    mov [ventry + 30], ax
-    call dir_write_entry
-    mov al, 1
-    ret
-.full:
-    cmp byte [cp_have], 0
-    je .msg
-    mov ax, [cp_new]
-    test ax, ax
-    jz .blank
-    call vi_free_chain
-.blank:
-    call entry_init
-    mov word [ventry + 26], 0
-    mov word [ventry + 28], 0
-    mov word [ventry + 30], 0
-    call dir_write_entry
-.msg:
-    mov si, s_no_space
-    call puts
-    xor al, al
+    mov si, [vi_fat_off]
+    add si, SCR_OFF
+    mov ax, [es:si]
+    test di, 1
+    jz .even
+    shr ax, 4
+    jmp .out
+.even:
+    and ax, 0x0FFF
+.out:
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
     ret
 
-del_src:
-    mov ax, [mv_srcdir]
-    call dir_load
-    mov si, mv_name
-    mov di, name83
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    call dir_find
-    test al, al
-    jz .done
-    mov ax, [res_first]
-    call vi_free_chain
-    mov si, dirbuf
-    add si, [res_off]
-    mov di, ventry
-    call set_es_k
-    mov cx, 32
-    rep movsb
-    mov byte [ventry], 0xE5
-    call dir_write_entry
-.done:
-    ret
+section .data
 
-cmd_cp:
-    call split_args
-    mov si, [arg1]
-    test si, si
-    jz .usage
-    cmp word [arg2], 0
-    je .usage
-    mov si, [arg1]
-    mov di, [arg2]
-    call args_same
-    test al, al
-    jnz .same
-    call cp_prepare_src
-    test al, al
-    jz .done
-    call cp_prepare_dst
-    test al, al
-    jz .done
-    call cp_copy
-.done:
-    ret
-.same:
-    mov si, s_cp_same
-    call puts
-    ret
-.usage:
-    mov si, s_cp_use
-    call puts
-    ret
-
-cmd_mv:
-    call split_args
-    mov si, [arg1]
-    test si, si
-    jz .usage
-    cmp word [arg2], 0
-    je .usage
-    mov si, [arg1]
-    mov di, [arg2]
-    call args_same
-    test al, al
-    jnz .same
-
-    mov si, [arg1]
-    call resolve
-    cmp byte [res_err], 0
-    jne .nf
-    call need_write
-    test al, al
-    jz .done
-    mov ax, [res_dir]
-    mov [mv_srcdir], ax
-    mov si, name83
-    mov di, mv_name
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    mov ax, [mv_srcdir]
-    call dir_load
-    mov si, mv_name
-    mov di, name83
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    call dir_find
-    test al, al
-    jz .nf
-    mov al, [res_attr]
-    mov [mv_attr], al
-
-    mov si, [arg2]
-    call resolve
-    cmp byte [res_err], 0
-    jne .nf
-    call need_write
-    test al, al
-    jz .done
-    mov ax, [res_dir]
-    mov [mv_dstdir], ax
-    mov si, name83
-    mov di, mv_newname
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    mov ax, [mv_dstdir]
-    call dir_load
-    call dir_find
-    test al, al
-    jnz .exists
-
-    mov ax, [mv_srcdir]
-    cmp ax, [mv_dstdir]
-    jne .cross
-
-    mov ax, [mv_srcdir]
-    call dir_load
-    mov si, mv_name
-    mov di, name83
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    call dir_find
-    test al, al
-    jz .nf
-    mov si, dirbuf
-    add si, [res_off]
-    mov di, ventry
-    call set_es_k
-    mov cx, 32
-    rep movsb
-    mov si, mv_newname
-    mov di, ventry
-    call set_es_k
-    mov cx, 11
-    rep movsb
-    call dir_write_entry
-    ret
-.cross:
-    test byte [mv_attr], 0x10
-    jnz .mvdir
-    call cp_prepare_src
-    test al, al
-    jz .done
-    call cp_prepare_dst
-    test al, al
-    jz .done
-    call cp_copy
-    test al, al
-    jz .done
-    call del_src
-.done:
-    ret
-.exists:
-    mov si, s_mv_ex
-    call puts
-    ret
-.mvdir:
-    mov si, s_mv_dir
-    call puts
-    ret
-.nf:
-    mov si, s_mv_nf
-    call puts
-    ret
-.same:
-    mov si, s_mv_same
-    call puts
-    ret
-.usage:
-    mov si, s_mv_use
-    call puts
-    ret
-
-; fills cpu_name with the brand string (or the vendor id), plus core counts
-cpu_probe:
-    mov word [cpu_cores], 1
-    mov word [cpu_threads], 1
-    mov si, s_cpu_unknown
-    mov di, cpu_name
-    call strcpy
-
-    pushfd
-    pop eax
-    mov ecx, eax
-    xor eax, 0x200000
-    push eax
-    popfd
-    pushfd
-    pop eax
-    push ecx
-    popfd
-    cmp eax, ecx
-    je .done
-
-    xor eax, eax
-    cpuid
-    mov [cpu_vendor], ebx
-    mov [cpu_vendor + 4], edx
-    mov [cpu_vendor + 8], ecx
-    mov byte [cpu_vendor + 12], 0
-    mov [cpu_max], eax
-
-    mov eax, 0x80000000
-    cpuid
-    cmp eax, 0x80000004
-    jb .vendor
-
-    mov di, cpu_brand
-    mov eax, 0x80000002
-    cpuid
-    mov [di], eax
-    mov [di + 4], ebx
-    mov [di + 8], ecx
-    mov [di + 12], edx
-    mov eax, 0x80000003
-    cpuid
-    mov [di + 16], eax
-    mov [di + 20], ebx
-    mov [di + 24], ecx
-    mov [di + 28], edx
-    mov eax, 0x80000004
-    cpuid
-    mov [di + 32], eax
-    mov [di + 36], ebx
-    mov [di + 40], ecx
-    mov [di + 44], edx
-    mov byte [cpu_brand + 48], 0
-
-    mov si, cpu_brand
-.lead:
-    cmp byte [si], ' '
-    jne .start
-    inc si
-    jmp .lead
-.start:
-    mov di, si
-.scan:
-    cmp byte [di], 0
-    je .trim
-    inc di
-    jmp .scan
-.trim:
-    cmp di, si
-    jbe .cut
-    cmp byte [di - 1], ' '
-    jne .cut
-    dec di
-    jmp .trim
-.cut:
-    mov byte [di], 0
-    cmp byte [si], 0
-    je .vendor
-    mov di, cpu_name
-.copy:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
-    test al, al
-    jnz .copy
-    jmp .count
-
-.vendor:
-    mov si, cpu_vendor
-    mov di, cpu_name
-.cpv:
-    mov al, [si]
-    mov [di], al
-    inc si
-    inc di
-    test al, al
-    jnz .cpv
-
-.count:
-    cmp word [cpu_max], 4
-    jb .leafb
-    mov eax, 4
-    xor ecx, ecx
-    cpuid
-    shr eax, 26
-    inc eax
-    mov [cpu_cores], ax
-.leafb:
-    cmp word [cpu_max], 0xB
-    jb .leaf1
-    mov eax, 0xB
-    xor ecx, ecx
-    cpuid
-    test bx, bx
-    jz .leaf1
-    mov [cpu_threads], bx
-    jmp .done
-.leaf1:
-    mov eax, 1
-    cpuid
-    mov eax, ebx
-    shr eax, 16
-    and eax, 0xFF
-    test ax, ax
-    jz .done
-    mov [cpu_threads], ax
-.done:
-    ret
-
-
-s_banner    db `\r\n  adachiOS 0.3 - a tiny os :3 (bios build)\r\n  type 'help' if you are lost\r\n\r\n`,0
+s_banner    db `\r\n  adachiOS 0.4 - a tiny os :3 (bios build)\r\n  type 'help' if you are lost\r\n\r\n`,0
 s_prompt    db `:3 adachiOS:`,0
 s_prompt2   db `> `,0
-s_help      db `commands:\r\n  help      show this list\r\n  echo      echo your words back\r\n  clear     clear the screen\r\n  fetch     system, cpu and memory info\r\n  pwd       print the current directory\r\n  cd        change directory (cd DIR, cd to go home)\r\n  ls        list a directory (ls [DIR])\r\n  cat       print a file (cat FILE)\r\n  vi        edit a file (vi FILE, needs sudo outside /home)\r\n  touch     create an empty file (touch FILE)\r\n  mkdir     create a directory (mkdir DIR)\r\n  rm        delete a file (rm FILE)\r\n  cp        copy a file (cp SRC DST)\r\n  mv        rename a file (mv SRC DST)\r\n  flappy    play flappy bird (space/w flap, q quit)\r\n  net       show network status\r\n  ping HOST  send ICMP echo requests to HOST\r\n  uname     kernel info\r\n  meow      :3\r\n  true      do nothing\r\n  false     do nothing\r\n  factor N  factor a number\r\n  rev TEXT  reverse text\r\n  whoami    show user\r\n  hostname  show host\r\n  yes       repeat text\r\n  seq N     print 1..N\r\n  sleep N   wait seconds\r\n  sudo      run one command as root (sudo CMD)\r\n  reboot    reboot\r\n  poweroff  power off\r\n`,0
 s_unknown   db `adachiOS: command not found (rude)\r\n`,0
-s_uname     db `adachiOS 0.3 i386 BIOS (16-bit real mode)\r\n`,0
-s_meow      db `meow :3\r\n`,0
-s_sudo_name db `sudo`,0
-s_sudo_use  db `usage: sudo CMD   (you start with only /home, sudo is root)\r\n`,0
-s_sudo_root db `sudo: you are already root for this command\r\n`,0
+s_rodo_name db `rodo`,0
+s_rodo_use  db `usage: rodo CMD   (you start with only /home, rodo is root)\r\n`,0
+s_rodo_root db `rodo: you are already root for this command\r\n`,0
+s_bin_a     db '\bin\',0
+s_bin_ext   db `.BIN`,0
+s_badexec   db `adachiOS: /bin program is not a valid binary\r\n`,0
 s_home_a    db 0x5C,'home',0
-s_no_dir    db `no such directory\r\n`,0
-s_ls_err    db `ls: could not read that directory\r\n`,0
-s_cd_nf     db `cd: no such directory\r\n`,0
-s_cd_nd     db `cd: not a directory\r\n`,0
-s_denied    db `adachiOS: permission denied (that is outside /home, try sudo)\r\n`,0
 s_disk      db `adachiOS: disk read error\r\n`,0
-s_cat_use   db `usage: cat FILE\r\n`,0
-s_cat_nf    db `cat: no such file\r\n`,0
-s_off       db `poweroff failed, halting.\r\n`,0
-s_rm_use    db `usage: rm FILE\r\n`,0
-s_rm_nf     db `rm: no such file\r\n`,0
-s_rm_busy   db `rm: directory not empty\r\n`,0
-s_touch_use db `usage: touch FILE\r\n`,0
-s_mk_use    db `usage: mkdir DIR\r\n`,0
-s_mk_ex     db `mkdir: already exists\r\n`,0
-s_cp_use    db `usage: cp SRC DST\r\n`,0
-s_cp_nf     db `cp: no such file\r\n`,0
-s_cp_same   db `cp: source and destination are the same\r\n`,0
-s_mv_use    db `usage: mv SRC DST\r\n`,0
-s_mv_nf     db `mv: no such file\r\n`,0
-s_mv_ex     db `mv: destination exists\r\n`,0
-s_mv_same   db `mv: source and destination are the same\r\n`,0
-s_mv_dir    db `mv: cannot move a directory to another directory\r\n`,0
-s_is_dir    db `that is a directory\r\n`,0
-s_no_space  db `no space left on the floppy\r\n`,0
-s_cpu_unknown db `unknown`,0
-s_f_head    db `\r\n  adachiOS fetch\r\n  --------------\r\n`,0
-s_f_cpu     db `  cpu:      `,0
-s_f_cores   db `  cores:    `,0
-s_f_threads db `  threads:  `,0
-s_f_arch    db `  arch:     i386 (16-bit real mode)\r\n`,0
-s_f_mem     db `  memory:   `,0
-s_f_mib     db ` MiB total\r\n`,0
-s_f_low     db `  low:      `,0
-s_f_kib     db ` KiB\r\n`,0
-s_f_boot    db `  boot:     drive 0x`,0
+empty       db 0
 
-n_help      db `help`,0
-n_cd        db `cd`,0
-n_pwd       db `pwd`,0
-n_echo      db `echo`,0
-n_clear     db `clear`,0
-n_fetch     db `fetch`,0
-n_ls        db `ls`,0
-n_cat       db `cat`,0
-n_vi        db `vi`,0
-n_touch     db `touch`,0
-n_mkdir     db `mkdir`,0
-n_rm        db `rm`,0
-n_cp        db `cp`,0
-n_mv        db `mv`,0
-n_flappy    db `flappy`,0
-n_uname     db `uname`,0
-n_meow      db `meow`,0
-n_whoami    db `whoami`,0
-n_hostname  db `hostname`,0
-n_true      db `true`,0
-n_false     db `false`,0
-n_yes       db `yes`,0
-n_seq       db `seq`,0
-n_sleep     db `sleep`,0
-n_factor    db `factor`,0
-n_rev       db `rev`,0
-n_net       db `net`,0
-n_ping      db `ping`,0
-n_sudo      db `sudo`,0
-n_reboot    db `reboot`,0
-n_poweroff  db `poweroff`,0
-
-cmdtab:
-    dw n_help,     cmd_help
-    dw n_cd,       cmd_cd
-    dw n_pwd,      cmd_pwd
-    dw n_echo,     cmd_echo
-    dw n_clear,    cmd_clear
-    dw n_fetch,    cmd_fetch
-    dw n_ls,       cmd_ls
-    dw n_cat,      cmd_cat
-    dw n_vi,       cmd_vi
-    dw n_touch,    cmd_touch
-    dw n_mkdir,    cmd_mkdir
-    dw n_rm,       cmd_rm
-    dw n_cp,       cmd_cp
-    dw n_mv,       cmd_mv
-    dw n_flappy,   cmd_flappy
-    dw n_uname,    cmd_uname
-    dw n_meow,     cmd_meow
-    dw n_whoami,   cmd_whoami
-    dw n_hostname, cmd_hostname
-    dw n_true,     cmd_true
-    dw n_false,    cmd_false
-    dw n_yes,      cmd_yes
-    dw n_seq,      cmd_seq
-    dw n_sleep,    cmd_sleep
-    dw n_factor,   cmd_factor
-    dw n_rev,      cmd_rev
-    dw n_net,      cmd_net
-    dw n_ping,     cmd_ping
-    dw n_reboot,   cmd_reboot
-    dw n_poweroff, cmd_poweroff
-    dw 0, 0
-
-drive    db 0
-argp     dw 0
-arg1     dw 0
-arg2     dw 0
-root_mode db 0
-cwd_path db '\home',0
-times 58 db 0
+drive       db 0
+argp        dw 0
+root_mode   db 0
+cwd_path    times 64 db 0
 cwd_cluster dw 0
-pathbuf  times 64 db 0
-path_in  dw 0
-pb_end   dw 0
-cur_cl   dw 0
-res_dir  dw 0
-res_off  dw 0
-res_first dw 0
-res_size dd 0
-res_attr db 0
-res_err  db 0
-comp_ptr dw 0
-next_ptr dw 0
-compbuf  times 16 db 0
+
+pathbuf     times 64 db 0
+path_in     dw 0
+pb_end      dw 0
+cur_cl      dw 0
+res_dir     dw 0
+res_off     dw 0
+res_first   dw 0
+res_size    dd 0
+res_attr    db 0
+res_err     db 0
+comp_ptr    dw 0
+next_ptr    dw 0
+compbuf     times 16 db 0
+name83      times 11 db ' '
+ventry      times 32 db 0
 dir_cluster dw 0
-dir_ns   dw 0
-dir_lba  times DIRMAX dw 0
-dir_new_off dw 0
-dirbuf   times 7168 db 0
-tmp_cl   dw 0
-tmp_new  dw 0
-tmp_lba  dw 0
-cp_srcdir dw 0
-cp_name  times 11 db ' '
-mv_srcdir dw 0
-mv_dstdir dw 0
-mv_name  times 11 db ' '
-mv_newname times 11 db ' '
-mv_attr  db 0
-mem_kb   dd 0
-mem_mib  dw 0
-mem_lo   dw 0
-cluster  dw 0
-fat_off  dw 0
-fsize    dd 0
-mk_cl    dw 0
-cp_src   dw 0
-cp_dst   dw 0
-cp_new   dw 0
-cp_prev  dw 0
-cp_size  dd 0
-cp_have  db 0
-cpbuf    times 512 db 0
-cpu_max  dd 0
-cpu_cores   dw 0
-cpu_threads dw 0
-cpu_vendor  times 13 db 0
-cpu_brand   times 49 db 0
-cpu_name    times 64 db 0
-name83   times 11 db ' '
-linebuf  times MAXLINE db 0
-
-%include "ethernet_bios.inc"
-
-%include "bios/flappy.asm"
-%include "bios/vi.asm"
+dir_ns      dw 0
+dir_lba     times DIRMAX dw 0
+dirbuf      times (ROOT_SECT * 512) db 0
+tmp_cl      dw 0
+vi_fat_off  dw 0
+vi_lba      dw 0
+load_cl     dw 0
+k_ss        dw 0
+k_sp        dw 0
+k_ds        dw 0
+k_es        dw 0
+extpath     times 80 db 0
+linebuf     times MAXLINE db 0
