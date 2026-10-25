@@ -66,6 +66,7 @@ bin_start:
 .setargs:
     mov [argp], rax
     mov [g_argp], rax
+    mov [g_argp], rax
 
     mov rax, [ctx_ptr]
     mov al, [rax + FCTX_ROOT]

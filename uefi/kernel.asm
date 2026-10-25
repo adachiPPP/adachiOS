@@ -197,8 +197,14 @@ efi_main:
     mov rax, [conout]
     call [rax + TXT_ENABLECURSOR]
 .text_ready:
-    lea rsi, [s_banner]
-    call puts
+    mov word [linebuf], 'a'
+    mov word [linebuf + 2], 'd'
+    mov word [linebuf + 4], 'i'
+    mov word [linebuf + 6], 'n'
+    mov word [linebuf + 8], 'i'
+    mov word [linebuf + 10], 't'
+    mov word [linebuf + 12], 0
+    call run_external
 
 .prompt_loop:
     lea rsi, [s_prompt]
@@ -1108,7 +1114,7 @@ cmd_is:
 
 section .data
 
-s_banner  db `\r\n  adachiOS 0.5 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
+s_banner  db `\r\n  adachiOS 0.6 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
 s_prompt  db `:3 adachiOS:`,0
 s_prompt2 db `> `,0
 s_unknown db `adachiOS: command not found (rude)\r\n`,0

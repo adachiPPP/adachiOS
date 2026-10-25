@@ -526,13 +526,16 @@ fb_putc:
     imul rcx, rdx
     shr rcx, 3
     rep movsq
-    mov rcx, [text_rows]
-    dec rcx
-    imul rcx, rdx
-    mov rdi, r15
-    add rdi, rcx
-    mov rcx, rdx
-    shr rcx, 2
+    mov rax, [text_rows]
+    dec rax
+    mov rcx, [font_h]
+    imul rax, rcx
+    mov rcx, [fb_stride]
+    imul rax, rcx
+    add r15, rax
+    mov rcx, [font_h]
+    imul rcx, [fb_stride]
+    shl rcx, 2
     xor eax, eax
     rep stosd
     mov r13, [text_rows]

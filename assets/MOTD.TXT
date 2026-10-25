@@ -1,0 +1,2 @@
+welcome to adachiOS 0.6 :3
+type 'help' if you are lost

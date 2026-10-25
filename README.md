@@ -1,4 +1,4 @@
-# adachiOS 0.5
+# adachiOS 0.6
 
 a basic tiny OS written in assembly, with a UEFI build and a legacy BIOS build because some ppl apperently still use bios
 
@@ -104,7 +104,7 @@ compiler because 16-bit real mode cannot comfortably host one.  use the host
 - shell: `help`, `echo`, `clear`, `fetch`, `pwd`, `cd`, `ls`, `cat`, `touch`,
   `mkdir`, `rm`, `cp`, `mv`, `vi`, `uname`, `meow`, `whoami`, `hostname`,
   `true`, `false`, `yes`, `seq`, `sleep`, `factor`, `rev`, `rodo`, `exec`,
-  `acc`, `flappy`, `reboot`, `poweroff`, plus command history
+  `acc`, `adctl`, `adinit`, `flappy`, plus command history
 - the shell starts in `/home` and paths work (`cd ..`, `ls /`, `cp /HELLO.TXT x`)
 - reading is allowed anywhere; anything that writes outside `/home` needs `rodo`
   for that one command (`rodo rm /HELLO.TXT`)

@@ -1015,7 +1015,7 @@ fat_next:
 
 section .data
 
-s_banner    db `\r\n  adachiOS 0.5 - a tiny os :3 (bios build)\r\n  type 'help' if you are lost\r\n\r\n`,0
+s_banner    db `\r\n  adachiOS 0.6 - a tiny os :3 (bios build)\r\n  type 'help' if you are lost\r\n\r\n`,0
 s_prompt    db `:3 adachiOS:`,0
 s_prompt2   db `> `,0
 s_unknown   db `adachiOS: command not found (rude)\r\n`,0

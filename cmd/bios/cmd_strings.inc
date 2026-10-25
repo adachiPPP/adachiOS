@@ -31,7 +31,7 @@ s_help      db 'commands:',13,10
             db '  poweroff  power off',13,10
             db 0
 
-s_uname     db 'adachiOS 0.5 i386 BIOS (16-bit real mode)',13,10,0
+s_uname     db 'adachiOS 0.6 i386 BIOS (16-bit real mode)',13,10,0
 s_meow      db 'meow :3',13,10,0
 s_bwhoami   db 'adachi',13,10,0
 s_bhostname db 'adachios',13,10,0

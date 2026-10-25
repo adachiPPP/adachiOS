@@ -18,4 +18,4 @@ cmd_uname:
 
 section .data
 
-s_uname db `adachiOS 0.5 x86_64 UEFI\r\n`,0
+s_uname db `adachiOS 0.6 x86_64 UEFI\r\n`,0
