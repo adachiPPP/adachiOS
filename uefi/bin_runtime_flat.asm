@@ -34,6 +34,17 @@ bin_start:
     mov rax, [rcx + FCTX_DEVICE]
     mov [fs_device], rax
 
+    mov rax, [rcx + FCTX_PUTC]
+    mov [con_putc_hook], rax
+    mov rax, [rcx + FCTX_CLEAR]
+    mov [con_clear_hook], rax
+    mov rax, [rcx + FCTX_SETCURSOR]
+    mov [con_set_cursor_hook], rax
+    mov rax, [rcx + FCTX_COLS]
+    mov [text_cols], rax
+    mov rax, [rcx + FCTX_ROWS]
+    mov [text_rows], rax
+
     mov rsi, [rcx + FCTX_CWD]
     test rsi, rsi
     jz .nocwd
@@ -54,6 +65,7 @@ bin_start:
     lea rax, [empty_w]
 .setargs:
     mov [argp], rax
+    mov [g_argp], rax
 
     mov rax, [ctx_ptr]
     mov al, [rax + FCTX_ROOT]
@@ -105,4 +117,5 @@ bs           resq 1
 ctx_ptr      resq 1
 cwd_w        resw 260
 argp         resq 1
+g_argp       resq 1
 root_mode    resb 1

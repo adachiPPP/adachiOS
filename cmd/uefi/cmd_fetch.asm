@@ -5,10 +5,10 @@ default rel
 
 global cmd_fetch
 
-extern conout
 extern bs
 extern sys_table
 extern puts
+extern puts_w
 extern print_dec
 extern s_nl
 
@@ -88,11 +88,9 @@ cmd_fetch:
 
     lea rsi, [s_f_fw]
     call puts
-    mov rcx, [conout]
-    mov rdx, [sys_table]
-    mov rdx, [rdx + ST_FIRMWAREVENDOR]
-    mov rax, [conout]
-    call [rax + TXT_OUTPUTSTRING]
+    mov rsi, [sys_table]
+    mov rsi, [rsi + ST_FIRMWAREVENDOR]
+    call puts_w
     lea rsi, [s_nl]
     call puts
 

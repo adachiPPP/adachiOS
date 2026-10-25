@@ -5,14 +5,12 @@ default rel
 
 global cmd_clear
 
-extern conout
+extern con_clear
 
 section .text
 
 cmd_clear:
     sub rsp, 40
-    mov rcx, [conout]
-    mov rax, [conout]
-    call [rax + TXT_CLEARSCREEN]
+    call con_clear
     add rsp, 40
     ret

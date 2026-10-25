@@ -972,7 +972,9 @@ static const char *func_label(const char *name) {
     static char buf[256];
     static const char *builtins[] = {
         "putchar", "puts", "print_int", "printf", "strlen", "strcmp",
-        "strcpy", "memcpy", "memset", "atoi", "malloc", "free", "exit", NULL
+        "strcpy", "memcpy", "memset", "atoi", "clear", "malloc", "free", "exit",
+        "read_file", "write_file", "delete_file", "sleep_seconds", "get_argp",
+        "fs_open", "fs_open_x", "need_write", NULL
     };
     for (int i = 0; builtins[i]; i++) {
         if (!strcmp(name, builtins[i])) {
@@ -1582,9 +1584,9 @@ int main(int argc, char **argv) {
 
     char cmd[2048];
     if (target_bios)
-        snprintf(cmd, sizeof(cmd), "nasm -f bin -i. '%s' -o '%s'", all, output);
+        snprintf(cmd, sizeof(cmd), "nasm -f bin -Wno-other -i. '%s' -o '%s'", all, output);
     else
-        snprintf(cmd, sizeof(cmd), "nasm -f bin -i. -iuefi -DCMD=cmd_main '%s' -o '%s'", all, output);
+        snprintf(cmd, sizeof(cmd), "nasm -f bin -Wno-other -i. -iuefi -DCMD=cmd_main '%s' -o '%s'", all, output);
     int rc = system(cmd);
     unlink(tmp);
     unlink(all);

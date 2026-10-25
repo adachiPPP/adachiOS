@@ -4,18 +4,16 @@ extern void *c_fs_open(unsigned short *path, unsigned long long mode, unsigned l
 extern void *c_fs_open_x(unsigned short *path, unsigned long long mode, unsigned long long attr);
 extern int c_need_write(void);
 
-typedef unsigned long long (*output_string_fn)(void *, unsigned short *);
-
 static void con_write(const char *s) {
-    unsigned short buf[1024];
+    char buf[4096];
     int n = 0;
-    while (*s && n < 1023) {
-        if (*s == '\n' && n < 1022) buf[n++] = '\r';
-        buf[n++] = (unsigned char)*s++;
+    while (*s && n < 4095) {
+        if (*s == '\n' && n < 4094)
+            buf[n++] = '\r';
+        buf[n++] = *s++;
     }
     buf[n] = 0;
-    output_string_fn fn = *(output_string_fn *)((char *)conout + 8);
-    fn(conout, buf);
+    puts_c(buf);
 }
 
 static unsigned char heap[4 * 1024 * 1024];

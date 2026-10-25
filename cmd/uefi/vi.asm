@@ -5,11 +5,15 @@ default rel
 
 global cmd_vi
 
-extern conout
 extern conin
 extern bs
 extern argp
 extern puts
+extern puts_w
+extern con_clear
+extern con_set_cursor
+extern con_cols
+extern con_rows
 extern fs_open
 extern resolve_path
 extern pathbuf
@@ -53,15 +57,11 @@ cmd_vi:
     mov qword [vcmdlen], 0
     call vi_load
 
-    mov rax, [conout]
-    mov rcx, rax
-    call [rax + TXT_CLEARSCREEN]
+    call con_clear
 
     call vi_loop
 
-    mov rax, [conout]
-    mov rcx, rax
-    call [rax + TXT_CLEARSCREEN]
+    call con_clear
     add rsp, 40
     ret
 .denied:
@@ -75,21 +75,10 @@ cmd_vi:
 
 vi_size:
     sub rsp, 40
-    mov rax, [conout]
-    mov rax, [rax + 72]
-    mov eax, [rax + 4]
-    mov [vmode_holder], rax
-    mov rax, [conout]
-    mov rcx, rax
-    mov rdx, [vmode_holder]
-    lea r8, [vcols]
-    lea r9, [vrow2s]
-    call [rax + TXT_QUERYMODE]
-    test rax, rax
-    jz .ok
-    mov qword [vcols], 80
-    mov qword [vrow2s], 25
-.ok:
+    call con_cols
+    mov [vcols], rax
+    call con_rows
+    mov [vrow2s], rax
     cmp qword [vcols], 256
     jbe .done
     mov qword [vcols], 256
@@ -702,15 +691,11 @@ vi_draw:
 .term:
     mov word [r9], 0
     mov [vidx], rsi
-    mov rax, [conout]
-    mov rcx, rax
     xor edx, edx
     mov r8, [vr]
-    call [rax + TXT_SETCURSOR]
-    mov rax, [conout]
-    mov rcx, rax
-    lea rdx, [vrow2]
-    call [rax + TXT_OUTPUTSTRING]
+    call con_set_cursor
+    lea rsi, [vrow2]
+    call puts_w
     inc qword [vr]
     jmp .rl
 
@@ -746,16 +731,12 @@ vi_draw:
     jmp .st_pad
 .st_term:
     mov word [r9], 0
-    mov rax, [conout]
-    mov rcx, rax
     xor edx, edx
     mov r8, [vrow2s]
     dec r8
-    call [rax + TXT_SETCURSOR]
-    mov rax, [conout]
-    mov rcx, rax
-    lea rdx, [vrow2]
-    call [rax + TXT_OUTPUTSTRING]
+    call con_set_cursor
+    lea rsi, [vrow2]
+    call puts_w
 
     mov rax, [vmode]
     cmp rax, 2
@@ -775,9 +756,7 @@ vi_draw:
     mov r8, [vcurline2]
     sub r8, [vtop]
 .cur_set:
-    mov rax, [conout]
-    mov rcx, rax
-    call [rax + TXT_SETCURSOR]
+    call con_set_cursor
     add rsp, 40
     ret
 
@@ -821,7 +800,6 @@ vcurcol2   resq 1
 vtrows    resq 1
 vcols     resq 1
 vrow2s     resq 1
-vmode_holder  resq 1
 vr        resq 1
 vidx      resq 1
 vdone     resq 1

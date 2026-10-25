@@ -34,6 +34,7 @@ int snprintf(char *buf, int n, const char *fmt, ...);
 int vsnprintf(char *buf, int n, const char *fmt, va_list ap);
 void printf(const char *fmt, ...);
 void puts(const char *s);
+void puts_c(const char *s);
 void putchar(int c);
 void print_int(long long n);
 void exit(int code);
@@ -55,6 +56,9 @@ extern void *bs;
 extern void *fs_device;
 extern void *argp;
 extern unsigned char guid_loaded[16];
+extern void *con_putc_hook;
+extern void *con_clear_hook;
+extern void *con_set_cursor_hook;
 
 extern void *fs_open(unsigned short *path, unsigned long long mode, unsigned long long attr);
 extern void *fs_open_x(unsigned short *path, unsigned long long mode, unsigned long long attr);

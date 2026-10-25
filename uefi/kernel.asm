@@ -15,6 +15,25 @@ global cwd_w
 global root_mode
 
 extern fs_open
+extern gop
+extern fb_base
+extern fb_stride
+extern fb_white
+extern fb_width
+extern fb_height
+extern font_scale
+extern font_w
+extern font_h
+extern cursor_x
+extern cursor_y
+extern text_cols
+extern text_rows
+extern fb_clear
+extern fb_putc
+extern con_set_cursor
+extern con_cursor_enable
+extern con_cursor_disable
+extern con_cursor_toggle
 extern li_ptr
 extern guid_loaded
 extern puts
@@ -37,17 +56,147 @@ efi_main:
     mov rax, [rdx + ST_BOOTSERVICES]
     mov [bs], rax
 
+    call setup_blink
     call setbigmode
 
+    lea rcx, [guid_gop]
+    xor rdx, rdx
+    lea r8, [gop]
+    mov rax, [bs]
+    call [rax + BS_LOCATEPROTOCOL]
+    test rax, rax
+    jz .gop_ok
+    mov rcx, [image_handle]
+    lea rdx, [guid_gop]
+    lea r8, [gop]
+    mov rax, [bs]
+    call [rax + BS_HANDLEPROTOCOL]
+    test rax, rax
+    jnz .no_gop
+.gop_ok:
+    mov rax, [gop]
+    mov rax, [rax + 24]
+    test rax, rax
+    jz .no_gop
+    mov rcx, [rax + 24]
+    mov [fb_base], rcx
+    mov rcx, [rax + 32]
+    mov [fb_size], rcx
+    mov rax, [rax + 8]
+    test rax, rax
+    jz .no_gop
+    mov ecx, [rax + 4]
+    mov [fb_width], rcx
+    mov ecx, [rax + 8]
+    mov [fb_height], rcx
+    mov ecx, [rax + 12]
+    cmp ecx, 3
+    jae .no_gop
+    mov qword [fb_white], 0x00FFFFFF
+    cmp ecx, 2
+    jne .color_ok
+    mov ecx, [rax + 16]
+    mov r8d, [rax + 20]
+    or ecx, r8d
+    mov r8d, [rax + 24]
+    or ecx, r8d
+    mov [fb_white], rcx
+.color_ok:
+    mov ecx, [rax + 32]
+    mov [fb_stride], rcx
+
+    cmp qword [fb_base], 0
+    je .no_gop
+    cmp qword [fb_width], 0
+    je .no_gop
+    cmp qword [fb_height], 0
+    je .no_gop
+    cmp qword [fb_stride], 0
+    jne .stride_ok
+    mov rax, [fb_size]
+    xor edx, edx
+    mov rcx, [fb_height]
+    shl rcx, 2
+    div rcx
+    mov [fb_stride], rax
+.stride_ok:
+    mov rax, [fb_stride]
+    cmp rax, [fb_width]
+    jae .stride_final
+    mov rax, [fb_width]
+    mov [fb_stride], rax
+.stride_final:
+    test rax, rax
+    jz .no_gop
+
+    mov qword [cursor_x], 0
+    mov qword [cursor_y], 0
+
+    mov rax, [fb_height]
+    mov rcx, 720
+    xor edx, edx
+    div rcx
+    test rax, rax
+    jnz .scale_nonzero
+    mov eax, 1
+.scale_nonzero:
+    cmp rax, 4
+    jbe .scale_cap
+    mov eax, 4
+.scale_cap:
+    mov rcx, rax
+.scale_ready:
+    mov r8, 8
+    imul r8, rcx
+    mov rax, [fb_width]
+    xor edx, edx
+    div r8
+    cmp rax, 80
+    jae .scale_ok
+    cmp rcx, 1
+    jbe .scale_ok
+    dec rcx
+    jmp .scale_ready
+.scale_ok:
+    mov [font_scale], rcx
+    mov rax, 16
+    imul rax, rcx
+    mov [font_h], rax
+    mov rax, 8
+    imul rax, rcx
+    mov [font_w], rax
+    mov rax, [fb_width]
+    xor edx, edx
+    mov rcx, [font_w]
+    div rcx
+    mov [text_cols], rax
+    mov rax, [fb_height]
+    xor edx, edx
+    mov rcx, [font_h]
+    div rcx
+    mov [text_rows], rax
+    test rax, rax
+    jz .no_gop
+    mov rax, [text_cols]
+    test rax, rax
+    jz .no_gop
+    call fb_clear
+    call con_cursor_enable
+    mov rcx, [conout]
+    xor edx, edx
+    mov rax, [conout]
+    call [rax + TXT_ENABLECURSOR]
+    jmp .text_ready
+.no_gop:
+    mov qword [gop], 0
     mov rcx, [conout]
     mov rax, [conout]
     call [rax + TXT_CLEARSCREEN]
-
     mov rcx, [conout]
     mov edx, 1
     mov rax, [conout]
     call [rax + TXT_ENABLECURSOR]
-
+.text_ready:
     lea rsi, [s_banner]
     call puts
 
@@ -101,6 +250,30 @@ setbigmode:
     add rsp, 40
     ret
 
+setup_blink:
+    sub rsp, 40
+    mov rax, [bs]
+    mov ecx, 0x80000000
+    mov edx, 4
+    xor r8d, r8d
+    xor r9d, r9d
+    lea r10, [timer_evt]
+    mov [rsp + 32], r10
+    call [rax + BS_CREATEEVENT]
+    test rax, rax
+    jnz .done
+    mov rcx, [timer_evt]
+    mov edx, 1
+    mov r8, 5000000
+    mov rax, [bs]
+    call [rax + BS_SETTIMER]
+    test rax, rax
+    jz .done
+    mov qword [timer_evt], 0
+.done:
+    add rsp, 40
+    ret
+
 readline:
     sub rsp, 40
     mov qword [linelen], 0
@@ -108,12 +281,24 @@ readline:
 .wait:
     mov rax, [conin]
     mov rcx, [rax + IN_WAITFORKEY]
-    mov [evt], rcx
-    mov rax, [bs]
+    mov [evts], rcx
+    mov rax, [timer_evt]
+    test rax, rax
+    jz .wait_one
+    mov [evts + 8], rax
+    mov ecx, 2
+    jmp .wait_go
+.wait_one:
     mov ecx, 1
-    lea rdx, [evt]
+.wait_go:
+    mov rax, [bs]
+    lea rdx, [evts]
     lea r8, [evidx]
     call [rax + BS_WAITFOREVENT]
+    test rax, rax
+    jnz .wait
+    cmp qword [evidx], 1
+    je .blink
 
     mov rax, [conin]
     mov rcx, rax
@@ -141,12 +326,12 @@ readline:
     mov [rdx + rcx*2], ax
     inc qword [linelen]
 
-    mov [echobuf], ax
-    mov word [echobuf + 2], 0
-    mov rcx, [conout]
-    lea rdx, [echobuf]
-    mov rax, [conout]
-    call [rax + TXT_OUTPUTSTRING]
+    mov cl, al
+    call fb_putc
+    jmp .wait
+
+.blink:
+    call con_cursor_toggle
     jmp .wait
 
 .enter:
@@ -270,10 +455,8 @@ erase_line:
 
 echo_line:
     sub rsp, 40
-    mov rax, [conout]
-    mov rcx, rax
-    lea rdx, [linebuf]
-    call [rax + TXT_OUTPUTSTRING]
+    lea rsi, [linebuf]
+    call puts_w
     add rsp, 40
     ret
 
@@ -330,7 +513,7 @@ dispatch:
     lea rsi, [s_rodo_name]
     call cmd_is
     test eax, eax
-    jz .dispatch
+    jz .not_rodo
 
     cmp byte [root_mode], 0
     jne .rodo_root
@@ -355,6 +538,56 @@ dispatch:
     lea rsi, [s_rodo_use]
     call puts
     jmp .out
+.not_rodo:
+    lea rsi, [s_exec_name]
+    call cmd_is
+    test eax, eax
+    jz .dispatch
+
+    mov rsi, [argp]
+    lea rdi, [extpath]
+.exec_copy:
+    mov ax, [rsi]
+    cmp ax, 32
+    je .exec_copy_done
+    cmp ax, 9
+    je .exec_copy_done
+    test ax, ax
+    jz .exec_copy_done
+    cmp ax, '/'
+    jne .exec_copy_noslash
+    mov ax, 92
+.exec_copy_noslash:
+    mov [rdi], ax
+    add rsi, 2
+    add rdi, 2
+    jmp .exec_copy
+.exec_copy_done:
+    mov word [rdi], 0
+    cmp word [extpath], 0
+    jz .exec_usage
+.exec_skipws:
+    cmp word [rsi], 32
+    je .exec_ws
+    cmp word [rsi], 9
+    je .exec_ws
+    jmp .exec_wsdone
+.exec_ws:
+    add rsi, 2
+    jmp .exec_skipws
+.exec_wsdone:
+    mov [argp], rsi
+
+    call run_file
+    test eax, eax
+    jnz .out
+    lea rsi, [s_execfail]
+    call puts
+    jmp .out
+.exec_usage:
+    lea rsi, [s_execusage]
+    call puts
+    jmp .out
 
 .dispatch:
     call run_external
@@ -364,6 +597,167 @@ dispatch:
     call puts
 .out:
     mov byte [root_mode], 0
+    add rsp, 40
+    ret
+
+run_file:
+    sub rsp, 40
+
+    lea rcx, [extpath]
+    mov rdx, 1
+    call fs_open
+    test rax, rax
+    jnz .open_ok
+
+    lea rdi, [extpath]
+.find_end:
+    mov ax, [rdi]
+    test ax, ax
+    jz .append_bin
+    add rdi, 2
+    jmp .find_end
+.append_bin:
+    mov word [rdi], '.'
+    add rdi, 2
+    mov word [rdi], 'B'
+    add rdi, 2
+    mov word [rdi], 'I'
+    add rdi, 2
+    mov word [rdi], 'N'
+    add rdi, 2
+    mov word [rdi], 0
+
+    lea rcx, [extpath]
+    mov rdx, 1
+    call fs_open
+    test rax, rax
+    jz .not_found
+
+.open_ok:
+    mov [ext_h], rax
+
+    mov rax, [bs]
+    mov ecx, 2
+    mov edx, 0x100000
+    lea r8, [ext_buf]
+    call [rax + BS_ALLOCATEPOOL]
+    test rax, rax
+    jnz .free_close
+
+    mov rdi, [ext_buf]
+    xor eax, eax
+    mov ecx, 131072
+    rep stosq
+
+    mov qword [ext_total], 0
+.rd:
+    mov qword [ext_sz], 65536
+    mov rcx, [ext_h]
+    lea rdx, [ext_sz]
+    mov r8, [ext_buf]
+    add r8, [ext_total]
+    mov rax, [ext_h]
+    call [rax + FILE_READ]
+    test rax, rax
+    jnz .free_close
+    mov rax, [ext_sz]
+    test rax, rax
+    jz .loaded
+    add [ext_total], rax
+    cmp qword [ext_total], 0x100000
+    jae .free_close
+    jmp .rd
+
+.loaded:
+    mov rcx, [ext_h]
+    mov rax, [ext_h]
+    call [rax + FILE_CLOSE]
+    mov qword [ext_h], 0
+
+    mov rax, [ext_buf]
+    cmp word [rax], 0x5A4D
+    je .pe
+    cmp dword [rax + 2], 0x31424441
+    jne .bad_exec
+
+    call con_cursor_disable
+    lea rax, [fctx]
+    mov rcx, [sys_table]
+    mov [rax + FCTX_SYSTAB], rcx
+    mov rcx, [image_handle]
+    mov [rax + FCTX_IMAGE], rcx
+    mov rcx, [li_ptr]
+    xor edx, edx
+    test rcx, rcx
+    jz .nodev
+    mov rdx, [rcx + LI_DEVICEHANDLE]
+.nodev:
+    mov [rax + FCTX_DEVICE], rdx
+    lea rcx, [cwd_w]
+    mov [rax + FCTX_CWD], rcx
+    mov rcx, [argp]
+    mov [rax + FCTX_ARGS], rcx
+    mov cl, [root_mode]
+    mov [rax + FCTX_ROOT], cl
+
+    lea rax, [fb_putc]
+    mov [fctx + FCTX_PUTC], rax
+    lea rax, [fb_clear]
+    mov [fctx + FCTX_CLEAR], rax
+    lea rax, [con_set_cursor]
+    mov [fctx + FCTX_SETCURSOR], rax
+    mov rax, [text_cols]
+    mov [fctx + FCTX_COLS], rax
+    mov rax, [text_rows]
+    mov [fctx + FCTX_ROWS], rax
+
+    call con_cursor_disable
+    lea rcx, [fctx]
+    mov rax, [ext_buf]
+    call rax
+    call con_cursor_enable
+
+    mov rcx, [ext_buf]
+    mov rax, [bs]
+    call [rax + BS_FREEPOOL]
+    mov eax, 1
+    add rsp, 40
+    ret
+
+.pe:
+    call con_cursor_disable
+    call load_pe
+    push rax
+    call con_cursor_enable
+    pop rax
+    add rsp, 40
+    ret
+
+.bad_exec:
+    mov rcx, [ext_buf]
+    mov rax, [bs]
+    call [rax + BS_FREEPOOL]
+    lea rsi, [s_badexec]
+    call puts
+    mov eax, 1
+    add rsp, 40
+    ret
+
+.free_close:
+    mov rcx, [ext_h]
+    mov rax, [ext_h]
+    call [rax + FILE_CLOSE]
+    mov rcx, [ext_buf]
+    mov rax, [bs]
+    call [rax + BS_FREEPOOL]
+    xor eax, eax
+    add rsp, 40
+    ret
+
+.not_found:
+    lea rsi, [s_execfail]
+    call puts
+    mov eax, 1
     add rsp, 40
     ret
 
@@ -478,9 +872,22 @@ run_external:
     mov cl, [root_mode]
     mov [rax + FCTX_ROOT], cl
 
+    lea rax, [fb_putc]
+    mov [fctx + FCTX_PUTC], rax
+    lea rax, [fb_clear]
+    mov [fctx + FCTX_CLEAR], rax
+    lea rax, [con_set_cursor]
+    mov [fctx + FCTX_SETCURSOR], rax
+    mov rax, [text_cols]
+    mov [fctx + FCTX_COLS], rax
+    mov rax, [text_rows]
+    mov [fctx + FCTX_ROWS], rax
+
+    call con_cursor_disable
     lea rcx, [fctx]
     mov rax, [ext_buf]
     call rax
+    call con_cursor_enable
 
     mov rcx, [ext_buf]
     mov rax, [bs]
@@ -490,7 +897,11 @@ run_external:
     ret
 
 .pe:
+    call con_cursor_disable
     call load_pe
+    push rax
+    call con_cursor_enable
+    pop rax
     add rsp, 40
     ret
 
@@ -558,6 +969,22 @@ load_pe:
     add rdi, 2
     jmp .cp_args
 .args_done:
+    mov word [rdi], 0
+    add rdi, 2
+    mov word [rdi], 'C'
+    mov word [rdi + 2], 'O'
+    mov word [rdi + 4], 'N'
+    mov word [rdi + 6], 'S'
+    add rdi, 8
+    lea rax, [fb_putc]
+    mov [rdi], rax
+    add rdi, 8
+    lea rax, [fb_clear]
+    mov [rdi], rax
+    add rdi, 8
+    lea rax, [con_set_cursor]
+    mov [rdi], rax
+    add rdi, 8
     mov word [rdi], 0
     add rdi, 2
     lea rax, [ext_opts]
@@ -681,13 +1108,16 @@ cmd_is:
 
 section .data
 
-s_banner  db `\r\n  adachiOS 0.4 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
+s_banner  db `\r\n  adachiOS 0.5 - a tiny os :3\r\n  type 'help' if you are lost\r\n\r\n`,0
 s_prompt  db `:3 adachiOS:`,0
 s_prompt2 db `> `,0
 s_unknown db `adachiOS: command not found (rude)\r\n`,0
 s_rodo_name db 'rodo',0
 s_rodo_use  db `usage: rodo CMD   (you start with only /home, rodo is root)\r\n`,0
 s_rodo_root db `rodo: you are already root for this command\r\n`,0
+s_exec_name db 'exec',0
+s_execusage db `usage: exec PATH [args]\r\n`,0
+s_execfail db `exec: file not found\r\n`,0
 s_bs      db 8,' ',8,0
 s_bin_w   dw 0x5C, 'b', 'i', 'n', 0x5C, 0
 s_bin_ext dw '.', 'b', 'i', 'n', 0
@@ -711,8 +1141,9 @@ bs           resq 1
 root_mode    resb 1
 
 linelen      resq 1
-evt          resq 1
+evts         resq 2
 evidx        resq 1
+timer_evt    resq 1
 key          resd 1
 echobuf      resw 2
 linebuf      resw 256
@@ -740,3 +1171,11 @@ bestmode     resq 1
 bestarea     resq 1
 qcols        resq 1
 qrows        resq 1
+fb_size      resq 1
+
+section .data
+guid_gop:
+    dd 0x9042a9de
+    dw 0x23dc
+    dw 0x4a38
+    db 0x96,0xfb,0x7a,0xde,0xd0,0x80,0x51,0x6a

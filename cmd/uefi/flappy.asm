@@ -5,11 +5,15 @@ default rel
 
 global cmd_flappy
 
-extern conout
 extern conin
 extern bs
 extern puts
+extern puts_w
 extern print_dec
+extern con_clear
+extern con_set_cursor
+extern con_cols
+extern con_rows
 
 BIRDX     equ 8
 PIPEW     equ 5
@@ -46,9 +50,7 @@ newgap:
 
 set_cursor:
     sub rsp, 40
-    mov rcx, [conout]
-    mov rax, [conout]
-    call [rax + TXT_SETCURSOR]
+    call con_set_cursor
     add rsp, 40
     ret
 
@@ -72,21 +74,10 @@ fl_put:
 
 fl_init:
     sub rsp, 40
-    mov rax, [conout]
-    mov rax, [rax + 72]
-    mov eax, [rax + 4]
-    mov [fl_curmode], rax
-    mov rcx, [conout]
-    mov rdx, [fl_curmode]
-    lea r8, [fl_cols]
-    lea r9, [fl_rows]
-    mov rax, [conout]
-    call [rax + TXT_QUERYMODE]
-    test rax, rax
-    jz .qok
-    mov qword [fl_cols], 80
-    mov qword [fl_rows], 25
-.qok:
+    call con_cols
+    mov [fl_cols], rax
+    call con_rows
+    mov [fl_rows], rax
     mov rax, [fl_cols]
     dec rax
     cmp rax, 255
@@ -366,10 +357,8 @@ fl_render:
     mov rdx, 0
     mov r8, [rv_y]
     call set_cursor
-    mov rcx, [conout]
-    lea rdx, [rowbuf]
-    mov rax, [conout]
-    call [rax + TXT_OUTPUTSTRING]
+    lea rsi, [rowbuf]
+    call puts_w
     inc qword [rv_y]
     jmp .oy
 .oyd:
@@ -387,9 +376,7 @@ fl_render:
 
 fl_over:
     sub rsp, 40
-    mov rcx, [conout]
-    mov rax, [conout]
-    call [rax + TXT_CLEARSCREEN]
+    call con_clear
     lea rsi, [s_over]
     call puts
     mov rax, [g_score]
@@ -411,24 +398,14 @@ fl_over:
     call [rax + IN_READKEYSTROKE]
     test rax, rax
     jnz .w
-    mov rcx, [conout]
-    mov rax, [conout]
-    call [rax + TXT_CLEARSCREEN]
+    call con_clear
     add rsp, 40
     ret
 
 cmd_flappy:
     sub rsp, 40
 
-    mov rcx, [conout]
-    mov rax, [conout]
-    call [rax + TXT_CLEARSCREEN]
-
-    mov rcx, [conout]
-    xor edx, edx
-    mov rax, [conout]
-    call [rax + TXT_ENABLECURSOR]
-
+    call con_clear
     call fl_init
 .gl:
     call fl_input
@@ -442,12 +419,6 @@ cmd_flappy:
     jmp .gl
 .over:
     call fl_over
-
-    mov rcx, [conout]
-    mov edx, 1
-    mov rax, [conout]
-    call [rax + TXT_ENABLECURSOR]
-
     add rsp, 40
     ret
 
@@ -462,7 +433,6 @@ section .bss
 fkey         resd 1
 fl_evt       resq 1
 fl_evidx     resq 1
-fl_curmode   resq 1
 fl_cols      resq 1
 fl_rows      resq 1
 

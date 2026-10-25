@@ -30,6 +30,24 @@ static void set_default_cwd(void) {
     cwd_w[i] = 0;
 }
 
+static void parse_console_hooks(unsigned short *opt, unsigned int size, int i) {
+    unsigned int max = size / 2;
+    if (!opt || i < 0)
+        return;
+    while (i < (int)max && opt[i])
+        i++;
+    if (i < (int)max)
+        i++;
+    if (i + 16 > (int)max)
+        return;
+    if (opt[i] != 'C' || opt[i + 1] != 'O' || opt[i + 2] != 'N' || opt[i + 3] != 'S')
+        return;
+    unsigned long long *p = (unsigned long long *)(opt + i + 4);
+    con_putc_hook = (void *)p[0];
+    con_clear_hook = (void *)p[1];
+    con_set_cursor_hook = (void *)p[2];
+}
+
 static int parse_load_options(unsigned short *opt, unsigned int size) {
     if (!opt || size == 0) {
         set_default_cwd();
@@ -50,6 +68,7 @@ static int parse_load_options(unsigned short *opt, unsigned int size) {
     n = 0;
     while (opt[i] && n < 511) args_w[n++] = opt[i++];
     args_w[n] = 0;
+    parse_console_hooks(opt, size, i);
     argp = args_w;
     n = 0;
     int a = 0;

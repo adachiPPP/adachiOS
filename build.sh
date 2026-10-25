@@ -8,6 +8,11 @@ usage() {
     exit 1
 }
 
+build_font() {
+    need sh
+    sh tools/gen_font.sh
+}
+
 need() {
     if ! command -v "$1" >/dev/null 2>&1; then
         printf 'error: %s is not installed\n' "$1" >&2
@@ -30,25 +35,36 @@ build_c_programs() {
     done
 }
 
+build_coreutils() {
+    target=$1
+    [ "$target" = "uefi" ] || return 0
+    [ -d coreutils ] || return 0
+    for src in coreutils/*.c; do
+        [ -e "$src" ] || continue
+        name=$(basename "$src" .c)
+        out=$(printf '%s' "$name" | tr 'a-z' 'A-Z')
+        ./acc/acc -t "$target" "$src" -o "build/bin/CORE_$out.BIN"
+    done
+}
+
 build_acc_os() {
-    need python3
     need clang
     need nasm
 
     linker=$1
     shift
 
-    python3 tools/gen_acc_rt.py
+    sh tools/gen_acc_rt.sh
     mkdir -p build/acc
     for f in acc/acc_os.c acc/acc_asm.c acc/acc_libc.c acc/acc_entry.c; do
         clang --target=x86_64-unknown-windows-msvc -ffreestanding -fno-builtin \
             -fno-stack-protector -O2 -Iacc -c "$f" \
             -o "build/acc/$(basename "$f" .c).obj"
     done
-    nasm -f win64 acc/acc_chkstk.asm -o build/acc/acc_chkstk.obj
-    nasm -f win64 acc/acc_glue.asm -o build/acc/acc_glue.obj
-    nasm -f win64 -iuefi uefi/lib.asm -o build/acc/lib.obj
-    nasm -f win64 -iuefi uefi/fs.asm -o build/acc/fs.obj
+    nasm -f win64 -Wno-other acc/acc_chkstk.asm -o build/acc/acc_chkstk.obj
+    nasm -f win64 -Wno-other acc/acc_glue.asm -o build/acc/acc_glue.obj
+    nasm -f win64 -Wno-other -iuefi uefi/lib.asm -o build/acc/lib.obj
+    nasm -f win64 -Wno-other -iuefi uefi/fs.asm -o build/acc/fs.obj
     "$linker" "$@" /subsystem:efi_application /entry:efi_main /nodefaultlib \
         /out:build/bin/ACC.BIN \
         build/acc/acc_os.obj build/acc/acc_asm.obj build/acc/acc_libc.obj \
@@ -72,12 +88,13 @@ uefi_build() {
     fi
 
     mkdir -p build
+    build_font
     rm -rf build/bin
     mkdir -p build/bin
 
-    nasm -f win64 -iuefi uefi/kernel.asm -o build/kernel.obj
-    nasm -f win64 -iuefi uefi/lib.asm -o build/lib.obj
-    nasm -f win64 -iuefi uefi/fs.asm -o build/fs.obj
+    nasm -f win64 -Wno-other -iuefi uefi/kernel.asm -o build/kernel.obj
+    nasm -f win64 -Wno-other -iuefi uefi/lib.asm -o build/lib.obj
+    nasm -f win64 -Wno-other -iuefi uefi/fs.asm -o build/fs.obj
 
     "$@" /subsystem:efi_application /entry:efi_main /nodefaultlib \
         /out:BOOTX64.EFI \
@@ -87,30 +104,30 @@ uefi_build() {
 
     for spec in \
         HELP:cmd/uefi/cmd_help:cmd_help \
-        ECHO:cmd/uefi/cmd_echo:cmd_echo \
-        CLEAR:cmd/uefi/cmd_clear:cmd_clear \
+        ECHO:oldutils/uefi/cmd_echo:cmd_echo \
+        CLEAR:oldutils/uefi/cmd_clear:cmd_clear \
         FETCH:cmd/uefi/cmd_fetch:cmd_fetch \
         PWD:cmd/uefi/cmd_pwd:cmd_pwd \
         CD:cmd/uefi/cmd_cd:cmd_cd \
         LS:cmd/uefi/cmd_ls:cmd_ls \
-        CAT:cmd/uefi/cmd_cat:cmd_cat \
+        CAT:oldutils/uefi/cmd_cat:cmd_cat \
         VI:cmd/uefi/vi:cmd_vi \
-        TOUCH:cmd/uefi/cmd_touch:cmd_touch \
+        TOUCH:oldutils/uefi/cmd_touch:cmd_touch \
         MKDIR:cmd/uefi/cmd_mkdir:cmd_mkdir \
-        RM:cmd/uefi/cmd_rm:cmd_rm \
-        CP:cmd/uefi/cmd_cp:cmd_cp \
-        MV:cmd/uefi/cmd_mv:cmd_mv \
-        UNAME:cmd/uefi/cmd_uname:cmd_uname \
-        MEOW:cmd/uefi/cmd_meow:cmd_meow \
-        TRUE:cmd/uefi/cmd_true:cmd_true \
-        FALSE:cmd/uefi/cmd_false:cmd_false \
-        FACTOR:cmd/uefi/cmd_factor:cmd_factor \
-        REV:cmd/uefi/cmd_rev:cmd_rev \
-        WHOAMI:cmd/uefi/cmd_whoami:cmd_whoami \
-        HOSTNAME:cmd/uefi/cmd_hostname:cmd_hostname \
-        YES:cmd/uefi/cmd_yes:cmd_yes \
-        SEQ:cmd/uefi/cmd_seq:cmd_seq \
-        SLEEP:cmd/uefi/cmd_sleep:cmd_sleep \
+        RM:oldutils/uefi/cmd_rm:cmd_rm \
+        CP:oldutils/uefi/cmd_cp:cmd_cp \
+        MV:oldutils/uefi/cmd_mv:cmd_mv \
+        UNAME:oldutils/uefi/cmd_uname:cmd_uname \
+        MEOW:oldutils/uefi/cmd_meow:cmd_meow \
+        TRUE:oldutils/uefi/cmd_true:cmd_true \
+        FALSE:oldutils/uefi/cmd_false:cmd_false \
+        FACTOR:oldutils/uefi/cmd_factor:cmd_factor \
+        REV:oldutils/uefi/cmd_rev:cmd_rev \
+        WHOAMI:oldutils/uefi/cmd_whoami:cmd_whoami \
+        HOSTNAME:oldutils/uefi/cmd_hostname:cmd_hostname \
+        YES:oldutils/uefi/cmd_yes:cmd_yes \
+        SEQ:oldutils/uefi/cmd_seq:cmd_seq \
+        SLEEP:oldutils/uefi/cmd_sleep:cmd_sleep \
         FLAPPY:cmd/uefi/flappy:cmd_flappy \
         REBOOT:cmd/uefi/cmd_reboot:cmd_reboot \
         POWEROFF:cmd/uefi/cmd_poweroff:cmd_poweroff
@@ -123,11 +140,12 @@ uefi_build() {
             cat uefi/bin_runtime_flat.asm
             sed -E '/^[[:space:]]*(global|extern)[[:space:]]/d' uefi/lib.asm uefi/fs.asm "$src.asm"
         } > "build/flat_$out.asm"
-        nasm -f bin -i. -iuefi -DCMD="$sym" "build/flat_$out.asm" -o "build/bin/$out.BIN"
+        nasm -f bin -Wno-other -i. -iuefi -DCMD="$sym" "build/flat_$out.asm" -o "build/bin/$out.BIN"
     done
 
     build_acc_os "$@"
     build_c_programs uefi
+    build_coreutils uefi
 
     mkdir -p assets
     [ -f assets/HELLO.TXT ] || printf 'hi from the boot partition\n' > assets/HELLO.TXT
@@ -154,17 +172,18 @@ bios_build() {
     rm -rf build/bin
     mkdir -p build/bin
 
-    nasm -f bin -i. bios/boot.asm -o build/boot.bin
-    nasm -f bin -i. bios/kernel.asm -o build/KERNEL.BIN
+    nasm -f bin -Wno-other -i. bios/boot.asm -o build/boot.bin
+    nasm -f bin -Wno-other -i. bios/kernel.asm -o build/KERNEL.BIN
 
     for src in cmd/bios/cmd_*.asm; do
         name=$(basename "$src" .asm)
         name=${name#cmd_}
         out=$(printf '%s' "$name" | tr 'a-z' 'A-Z')
-        nasm -f bin -i. "$src" -o "build/bin/$out.BIN"
+        nasm -f bin -Wno-other -i. "$src" -o "build/bin/$out.BIN"
     done
 
     build_c_programs bios
+    build_coreutils bios
 
     boot_size=$(wc -c < build/boot.bin)
     if [ "$boot_size" -ne 450 ]; then

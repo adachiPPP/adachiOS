@@ -5,9 +5,9 @@ default rel
 
 global cmd_ls
 
-extern conout
 extern bs
 extern puts
+extern puts_w
 extern argp
 extern cwd_w
 extern fs_open
@@ -78,10 +78,8 @@ cmd_ls:
     test ax, ax
     jz .skipent
 .show:
-    mov rcx, [conout]
-    lea rdx, [r8 + 80]
-    mov rax, [conout]
-    call [rax + TXT_OUTPUTSTRING]
+    lea rsi, [r8 + 80]
+    call puts_w
 
     mov r8, [lscur]
     test qword [r8 + 72], 0x10

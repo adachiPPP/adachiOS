@@ -1,4 +1,4 @@
-# adachiOS 0.4
+# adachiOS 0.5
 
 a basic tiny OS written in assembly, with a UEFI build and a legacy BIOS build because some ppl apperently still use bios
 
@@ -24,8 +24,8 @@ assets/      files copied into the boot images
 
 needs `nasm`, `lld-link` (or `lld`), `mkfs.fat` and mtools (`mmd`, `mcopy`); the
 BIOS image also uses `dd` because of obvious reasons.  the UEFI build also needs
-`clang` and `python3` for the in-OS compiler; the host `acc` itself needs a host
-C compiler (`cc`).
+`clang`, `python3` and an 8x16 console font from the `kbd` package; the host
+`acc` itself needs a host C compiler (`cc`).
 
 ## userland
 
@@ -90,7 +90,8 @@ acc hello.c -o /home/HELLO.BIN
 rodo acc hello.c -o /bin/HELLO.BIN
 ```
 
-writing outside `/home` still needs `rodo`, hence the second form.  the in-OS
+writing outside `/home` still needs `rodo`, hence the second form.  use
+`exec /home/HELLO.BIN` (or `exec /bin/HELLO.BIN`) to run the result.  the in-OS
 compiler accepts `-t uefi`; `-t bios` is rejected.  the BIOS image has no in-OS
 compiler because 16-bit real mode cannot comfortably host one.  use the host
 `./acc/acc -t bios ...` to build BIOS programs.
@@ -98,10 +99,12 @@ compiler because 16-bit real mode cannot comfortably host one.  use the host
 ## uefi
 
 - 16 MB FAT image with `EFI/BOOT/BOOTX64.EFI`, `HELLO.TXT`, `home/` and `bin/`
+- direct GOP framebuffer console with automatic font scaling, falling back to
+  firmware ConOut when GOP is unavailable
 - shell: `help`, `echo`, `clear`, `fetch`, `pwd`, `cd`, `ls`, `cat`, `touch`,
   `mkdir`, `rm`, `cp`, `mv`, `vi`, `uname`, `meow`, `whoami`, `hostname`,
-  `true`, `false`, `yes`, `seq`, `sleep`, `factor`, `rev`, `rodo`, `acc`,
-  `flappy`, `reboot`, `poweroff`, plus command history
+  `true`, `false`, `yes`, `seq`, `sleep`, `factor`, `rev`, `rodo`, `exec`,
+  `acc`, `flappy`, `reboot`, `poweroff`, plus command history
 - the shell starts in `/home` and paths work (`cd ..`, `ls /`, `cp /HELLO.TXT x`)
 - reading is allowed anywhere; anything that writes outside `/home` needs `rodo`
   for that one command (`rodo rm /HELLO.TXT`)

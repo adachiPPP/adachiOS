@@ -25,7 +25,6 @@ global s_home_w
 global li_ptr
 global fs_device
 
-extern conout
 extern bs
 extern image_handle
 extern puts
@@ -130,20 +129,18 @@ print_bytes:
     dec qword [pb_left]
     cmp eax, 10
     jne .put
-    mov word [rdi], 13
-    add rdi, 2
+    mov byte [rdi], 13
+    inc rdi
     inc r9
 .put:
-    mov [rdi], ax
-    add rdi, 2
+    mov [rdi], al
+    inc rdi
     inc r9
     jmp .inner
 .flush:
-    mov word [rdi], 0
-    mov rax, [conout]
-    mov rcx, rax
-    lea rdx, [pbuf]
-    call [rax + TXT_OUTPUTSTRING]
+    mov byte [rdi], 0
+    lea rsi, [pbuf]
+    call puts
     jmp .outer
 .done:
     add rsp, 40
@@ -527,6 +524,6 @@ cp_wsz       resq 1
 copy_nf      resq 1
 copy_err     resq 1
 cpbuf        resb 4096
-pbuf         resw 512
+pbuf         resb 1024
 pb_src       resq 1
 pb_left      resq 1

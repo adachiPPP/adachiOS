@@ -19,13 +19,17 @@ IN_WAITFORKEY     equ 16
 BS_GETMEMORYMAP   equ 56
 BS_ALLOCATEPOOL   equ 64
 BS_FREEPOOL       equ 72
+BS_CREATEEVENT    equ 80
+BS_SETTIMER       equ 88
 BS_WAITFOREVENT   equ 96
+BS_CHECKEVENT     equ 120
 BS_HANDLEPROTOCOL equ 152
 BS_LOADIMAGE      equ 200
 BS_STARTIMAGE     equ 208
 BS_EXIT           equ 216
 BS_UNLOADIMAGE    equ 224
 BS_STALL          equ 248
+BS_LOCATEPROTOCOL equ 320
 
 RT_RESETSYSTEM    equ 104
 
@@ -47,6 +51,11 @@ FCTX_DEVICE       equ 16
 FCTX_CWD          equ 24
 FCTX_ARGS         equ 32
 FCTX_ROOT         equ 40
-FCTX_SIZE         equ 48
+FCTX_PUTC         equ 48
+FCTX_CLEAR        equ 56
+FCTX_SETCURSOR    equ 64
+FCTX_COLS         equ 72
+FCTX_ROWS         equ 80
+FCTX_SIZE         equ 88
 
 %endif
